@@ -1,11 +1,10 @@
-use core::cmp::{Ordering, Reverse};
-use std::collections::BinaryHeap;
+use core::cmp::Ordering;
 
 use crate::{
     compare_events::compare_events,
-    min_heap::MinHeap,
+    min_heap::MinHeapByCompareEvents,
     operation::Operation,
-    sweep_event::{SweepEvent, SweepEventOrderedByCompareEvent},
+    sweep_event::{SweepEvent, SweepEventArena},
 };
 
 fn process_polygon(
@@ -13,8 +12,9 @@ fn process_polygon(
     is_subject: bool,
     depth: i64,
     is_exterior_ring: bool,
-    q: &mut MinHeap<SweepEventOrderedByCompareEvent>,
+    q: &mut MinHeapByCompareEvents,
     bbox: &mut [f64; 4],
+    arena: &mut SweepEventArena,
 ) {
     if contour_or_hole.is_empty() {
         return;
@@ -28,21 +28,21 @@ fn process_polygon(
             continue; // skip collapsed edges, or it breaks
         }
 
-        let e1 = SweepEvent::new(s1, false, None, is_subject, None);
-        let e2 = SweepEvent::new(s2, false, Some(e1.clone()), is_subject, None);
-        e1.borrow_mut().other_event = Some(e2.clone());
+        let (mut e1, e1_id) = SweepEvent::new(s1, false, None, is_subject, None, arena);
+        let (mut e2, e2_id) = SweepEvent::new(s2, false, Some(e1_id), is_subject, None, arena);
+        e1.other_event = Some(e2_id);
 
-        e1.borrow_mut().contour_id = depth;
-        e2.borrow_mut().contour_id = depth;
+        e1.contour_id = depth;
+        e2.contour_id = depth;
         if !is_exterior_ring {
-            e1.borrow_mut().is_exterior_ring = false;
-            e2.borrow_mut().is_exterior_ring = false;
+            e1.is_exterior_ring = false;
+            e2.is_exterior_ring = false;
         }
 
-        if compare_events(&e1.borrow(), &e2.borrow()) > Ordering::Equal {
-            e2.borrow_mut().left = true;
+        if compare_events(&e1, &e2, arena) > Ordering::Equal {
+            e2.left = true;
         } else {
-            e1.borrow_mut().left = true;
+            e1.left = true;
         }
 
         let x = s1[0];
@@ -54,8 +54,8 @@ fn process_polygon(
 
         // Pushing it so the queue is sorted from left to right,
         // with object on the left having the highest priority.
-        q.push(Reverse(SweepEventOrderedByCompareEvent(e1)));
-        q.push(Reverse(SweepEventOrderedByCompareEvent(e2)));
+        q.push(e1_id, arena);
+        q.push(e2_id, arena);
     }
 }
 
@@ -65,8 +65,9 @@ pub(crate) fn fill_queue(
     sbbox: &mut [f64; 4],
     cbbox: &mut [f64; 4],
     operation: Option<Operation>,
-) -> MinHeap<SweepEventOrderedByCompareEvent> {
-    let mut event_queue: MinHeap<SweepEventOrderedByCompareEvent> = BinaryHeap::new();
+    arena: &mut SweepEventArena,
+) -> MinHeapByCompareEvents {
+    let mut event_queue = MinHeapByCompareEvents::new();
     let mut initial_contour_id = 0i64;
 
     for polygon_set in subject {
@@ -82,6 +83,7 @@ pub(crate) fn fill_queue(
                 is_exterior_ring,
                 &mut event_queue,
                 sbbox,
+                arena,
             );
         }
     }
@@ -102,6 +104,7 @@ pub(crate) fn fill_queue(
                 is_exterior_ring,
                 &mut event_queue,
                 cbbox,
+                arena,
             );
         }
     }

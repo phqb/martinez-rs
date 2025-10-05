@@ -1,56 +1,54 @@
-use core::cell::RefCell;
-use std::rc::Rc;
-
 use crate::{
     edge_type::EdgeType,
     operation::Operation,
-    sweep_event::{ResultTransitionType, SweepEvent},
+    sweep_event::{ResultTransitionType, SweepEvent, SweepEventArena, SweepEventId},
 };
 
 pub(crate) fn compute_fields(
-    event: Rc<RefCell<SweepEvent>>,
-    prev: Option<Rc<RefCell<SweepEvent>>>,
+    event: SweepEventId,
+    prev: Option<SweepEventId>,
     operation: Operation,
+    arena: &mut SweepEventArena,
 ) {
     // compute inOut and otherInOut fields
     if prev.is_none() {
-        event.borrow_mut().in_out = false;
-        event.borrow_mut().other_in_out = true;
+        arena[event].in_out = false;
+        arena[event].other_in_out = true;
 
     // previous line segment in sweepline belongs to the same polygon
     } else {
         let prev = prev.unwrap();
 
-        if event.borrow().is_subject == prev.borrow().is_subject {
-            event.borrow_mut().in_out = !prev.borrow().in_out;
-            event.borrow_mut().other_in_out = prev.borrow().other_in_out;
+        if arena[event].is_subject == arena[prev].is_subject {
+            arena[event].in_out = !arena[prev].in_out;
+            arena[event].other_in_out = arena[prev].other_in_out;
 
         // previous line segment in sweepline belongs to the clipping polygon
         } else {
-            event.borrow_mut().in_out = !prev.borrow().other_in_out;
-            event.borrow_mut().other_in_out = if prev.borrow().is_vertical() {
-                !prev.borrow().in_out
+            arena[event].in_out = !arena[prev].other_in_out;
+            arena[event].other_in_out = if arena[prev].is_vertical(arena) {
+                !arena[prev].in_out
             } else {
-                prev.borrow().in_out
+                arena[prev].in_out
             };
         }
 
         // compute prevInResult field
-        event.borrow_mut().prev_in_result =
-            if !in_result(&prev.borrow(), operation) || prev.borrow().is_vertical() {
-                prev.borrow().prev_in_result.clone()
+        arena[event].prev_in_result =
+            if !in_result(&arena[prev], operation) || arena[prev].is_vertical(arena) {
+                arena[prev].prev_in_result
             } else {
-                Some(prev.clone())
+                Some(arena[prev].id)
             };
     }
 
     // check if the line segment belongs to the Boolean operation
-    let is_in_result = in_result(&event.borrow(), operation);
+    let is_in_result = in_result(&arena[event], operation);
     if is_in_result {
-        let transition = determine_result_transition(&event.borrow(), operation);
-        event.borrow_mut().result_transition = transition;
+        let transition = determine_result_transition(&arena[event], operation);
+        arena[event].result_transition = transition;
     } else {
-        event.borrow_mut().result_transition = ResultTransitionType::NotInResult;
+        arena[event].result_transition = ResultTransitionType::NotInResult;
     }
 }
 

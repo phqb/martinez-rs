@@ -1,11 +1,8 @@
-use core::{cell::RefCell, cmp::Ordering};
+use core::ops::{Deref, DerefMut, Index, IndexMut};
 #[cfg(test)]
-use std::collections::HashSet;
-use std::rc::Rc;
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
-use crate::{
-    compare_events::compare_events, compare_segments::compare_segments, edge_type::EdgeType,
-};
+use crate::edge_type::EdgeType;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
 pub(crate) enum ResultTransitionType {
@@ -20,16 +17,62 @@ impl Default for ResultTransitionType {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct SweepEventId(usize);
+
+impl Default for SweepEventId {
+    fn default() -> Self {
+        Self(usize::MAX)
+    }
+}
+
+pub(crate) struct SweepEventArena(Vec<SweepEvent>);
+
+impl SweepEventArena {
+    pub fn new() -> Self {
+        Self(vec![])
+    }
+}
+
+impl Deref for SweepEventArena {
+    type Target = Vec<SweepEvent>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for SweepEventArena {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Index<SweepEventId> for SweepEventArena {
+    type Output = SweepEvent;
+
+    fn index(&self, index: SweepEventId) -> &Self::Output {
+        &self.0[index.0]
+    }
+}
+
+impl IndexMut<SweepEventId> for SweepEventArena {
+    fn index_mut(&mut self, index: SweepEventId) -> &mut Self::Output {
+        &mut self.0[index.0]
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SweepEvent {
+    pub id: SweepEventId,
     pub point: [f64; 2],
     pub left: bool,
-    pub other_event: Option<Rc<RefCell<SweepEvent>>>,
+    pub other_event: Option<SweepEventId>,
     pub is_subject: bool,
     pub edge_type: EdgeType,
     pub in_out: bool,
     pub other_in_out: bool,
-    pub prev_in_result: Option<Rc<RefCell<SweepEvent>>>,
+    pub prev_in_result: Option<SweepEventId>,
     pub result_transition: ResultTransitionType,
     pub other_pos: i64,
     pub contour_id: i64,
@@ -41,11 +84,14 @@ impl SweepEvent {
     pub fn new(
         point: [f64; 2],
         left: bool,
-        other_event: Option<Rc<RefCell<SweepEvent>>>,
+        other_event: Option<SweepEventId>,
         is_subject: bool,
         edge_type: Option<EdgeType>,
-    ) -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Self {
+        arena: &mut SweepEventArena,
+    ) -> (Self, SweepEventId) {
+        let id = SweepEventId(arena.len());
+        let event = Self {
+            id,
             point,
             left,
             other_event,
@@ -61,29 +107,41 @@ impl SweepEvent {
             output_contour_id: -1,
             // TODO: Looks unused, remove?
             is_exterior_ring: true,
-        }))
+        };
+        arena.push(event.clone());
+        (event, id)
     }
 
     #[cfg(test)]
-    pub fn with_point(point: [f64; 2]) -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Self {
+    pub fn with_point(point: [f64; 2], arena: &mut SweepEventArena) -> (Self, SweepEventId) {
+        let id = SweepEventId(arena.len());
+        let event = Self {
             point,
             ..Default::default()
-        }))
+        };
+        arena.push(event.clone());
+        (event, id)
     }
 
     #[cfg(test)]
-    pub fn with_point_and_left(point: [f64; 2], left: bool) -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Self {
+    pub fn with_point_and_left(
+        point: [f64; 2],
+        left: bool,
+        arena: &mut SweepEventArena,
+    ) -> (Self, SweepEventId) {
+        let id = SweepEventId(arena.len());
+        let event = Self {
             point,
             left,
             ..Default::default()
-        }))
+        };
+        arena.push(event.clone());
+        (event, id)
     }
 
-    pub fn is_below(&self, p: &[f64; 2]) -> bool {
+    pub fn is_below(&self, p: &[f64; 2], arena: &SweepEventArena) -> bool {
         let p0 = self.point;
-        let p1 = self.other_event.as_ref().unwrap().borrow().point;
+        let p1 = arena[self.other_event.expect("SweepEvent.other_event")].point;
         // TODO: use approx?
         if self.left {
             (p0[0] - p[0]) * (p1[1] - p[1]) - (p1[0] - p[0]) * (p0[1] - p[1]) > 0.0
@@ -92,13 +150,12 @@ impl SweepEvent {
         }
     }
 
-    pub fn is_above(&self, p: &[f64; 2]) -> bool {
-        !self.is_below(p)
+    pub fn is_above(&self, p: &[f64; 2], arena: &SweepEventArena) -> bool {
+        !self.is_below(p, arena)
     }
 
-    pub fn is_vertical(&self) -> bool {
-        // TODO: use approx?
-        self.point[0] == self.other_event.as_ref().unwrap().borrow().point[0]
+    pub fn is_vertical(&self, arena: &SweepEventArena) -> bool {
+        self.point[0] == arena[self.other_event.expect("SweepEvent.other_event")].point[0]
     }
 
     pub fn in_result(&self) -> bool {
@@ -106,89 +163,32 @@ impl SweepEvent {
     }
 }
 
-pub(crate) struct SweepEventOrderedByCompareEvent(pub Rc<RefCell<SweepEvent>>);
-
-impl PartialEq for SweepEventOrderedByCompareEvent {
-    fn eq(&self, other: &Self) -> bool {
-        compare_events(&self.0.borrow(), &other.0.borrow()) == Ordering::Equal
-    }
-}
-
-impl Eq for SweepEventOrderedByCompareEvent {}
-
-impl PartialOrd for SweepEventOrderedByCompareEvent {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SweepEventOrderedByCompareEvent {
-    fn cmp(&self, other: &Self) -> Ordering {
-        compare_events(&self.0.borrow(), &other.0.borrow())
-    }
-}
-
-impl Clone for SweepEventOrderedByCompareEvent {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-pub(crate) struct SweepEventOrderedByCompareSegment(pub Rc<RefCell<SweepEvent>>);
-
-impl PartialEq for SweepEventOrderedByCompareSegment {
-    fn eq(&self, other: &Self) -> bool {
-        compare_segments(&self.0.borrow(), &other.0.borrow()) == Ordering::Equal
-    }
-}
-
-impl Eq for SweepEventOrderedByCompareSegment {}
-
-impl PartialOrd for SweepEventOrderedByCompareSegment {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SweepEventOrderedByCompareSegment {
-    fn cmp(&self, other: &Self) -> Ordering {
-        compare_segments(&self.0.borrow(), &other.0.borrow())
-    }
-}
-
-impl Clone for SweepEventOrderedByCompareSegment {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
+#[cfg(test)]
+pub(crate) struct SweepEventDeepEqual<'a>(pub SweepEvent, pub &'a SweepEventArena);
 
 #[cfg(test)]
-pub(crate) struct SweepEventDeepEqual(pub Rc<RefCell<SweepEvent>>);
-
-#[cfg(test)]
-impl graph_safe_compare::Node for SweepEventDeepEqual {
+impl graph_safe_compare::Node for SweepEventDeepEqual<'_> {
     type Cmp = bool;
     type Id = usize;
     type Index = usize;
 
     fn id(&self) -> Self::Id {
-        self.0.as_ptr() as usize
+        self.0.id.0
     }
 
     fn get_edge(&self, index: &Self::Index) -> Option<Self> {
-        let selfz = self.0.borrow();
-        match (&selfz.other_event, &selfz.prev_in_result) {
+        match (self.0.other_event, self.0.prev_in_result) {
             (Some(other_event), None) => match *index {
-                0 => Some(Self(other_event.clone())),
+                0 => Some(Self(self.1[other_event].clone(), self.1)),
                 _ => None,
             },
             (None, Some(prev)) => match *index {
-                0 => Some(Self(prev.clone())),
+                0 => Some(Self(self.1[prev].clone(), self.1)),
                 _ => None,
             },
             (Some(other_event), Some(prev)) => match *index {
-                0 => Some(Self(other_event.clone())),
-                1 => Some(Self(prev.clone())),
+                0 => Some(Self(self.1[other_event].clone(), self.1)),
+                1 => Some(Self(self.1[prev].clone(), self.1)),
                 _ => None,
             },
             (None, None) => None,
@@ -198,8 +198,8 @@ impl graph_safe_compare::Node for SweepEventDeepEqual {
     fn equiv_modulo_edges(&self, other: &Self) -> Self::Cmp {
         use crate::equals::equals;
 
-        let a = self.0.borrow();
-        let b = other.0.borrow();
+        let a = &self.0;
+        let b = &other.0;
 
         equals(&a.point, &b.point)
             && a.left == b.left
@@ -216,54 +216,58 @@ impl graph_safe_compare::Node for SweepEventDeepEqual {
 }
 
 #[cfg(test)]
-impl PartialEq for SweepEventDeepEqual {
+impl PartialEq for SweepEventDeepEqual<'_> {
     fn eq(&self, other: &Self) -> bool {
-        graph_safe_compare::robust::equiv(Self(self.0.clone()), Self(other.0.clone()))
+        graph_safe_compare::robust::equiv(
+            Self(self.0.clone(), self.1),
+            Self(other.0.clone(), self.1),
+        )
     }
 }
 
 #[cfg(test)]
-impl Eq for SweepEventDeepEqual {}
+impl Eq for SweepEventDeepEqual<'_> {}
 
 #[cfg(test)]
-impl core::fmt::Debug for SweepEventDeepEqual {
+impl core::fmt::Debug for SweepEventDeepEqual<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let debug = SweepEventDebug {
             inner: self.0.clone(),
             visited: Rc::new(RefCell::new(HashSet::new())),
+            arena: self.1,
         };
         debug.fmt(f)
     }
 }
 
 #[cfg(test)]
-struct SweepEventDebug {
-    inner: Rc<RefCell<SweepEvent>>,
-    visited: Rc<RefCell<HashSet<usize>>>,
+struct SweepEventDebug<'a> {
+    inner: SweepEvent,
+    visited: Rc<RefCell<HashSet<SweepEventId>>>,
+    arena: &'a SweepEventArena,
 }
 
 #[cfg(test)]
-impl SweepEventDebug {
+impl SweepEventDebug<'_> {
     fn debug(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.visited
-            .borrow_mut()
-            .insert(self.inner.as_ptr() as usize);
+        self.visited.borrow_mut().insert(self.inner.id);
 
-        let selfz = self.inner.borrow();
-        let mut debug = f.debug_struct(&format!("SweepEvent({})", self.inner.as_ptr() as usize));
+        let selfz = &self.inner;
+        let mut debug = f.debug_struct(&format!("SweepEvent({:?})", selfz.id));
 
         debug.field("point", &selfz.point);
         debug.field("left", &selfz.left);
-        if let Some(other_event) = &selfz.other_event {
-            let ptr = other_event.as_ptr() as usize;
-            if self.visited.borrow().contains(&ptr) {
-                debug.field("other_event", &format!("SweepEvent({ptr})"));
+        if let Some(other_event) = selfz.other_event {
+            let id = self.arena[other_event].id;
+            if self.visited.borrow().contains(&id) {
+                debug.field("other_event", &format!("SweepEvent({:?})", id));
             } else {
                 debug.field(
                     "prev_in_result",
                     &SweepEventDebug {
-                        inner: other_event.clone(),
+                        inner: self.arena[other_event].clone(),
                         visited: self.visited.clone(),
+                        arena: self.arena,
                     },
                 );
             }
@@ -272,16 +276,17 @@ impl SweepEventDebug {
         debug.field("edge_type", &selfz.edge_type);
         debug.field("in_out", &selfz.in_out);
         debug.field("other_in_out", &selfz.other_in_out);
-        if let Some(prev) = &selfz.prev_in_result {
-            let ptr = prev.as_ptr() as usize;
-            if self.visited.borrow().contains(&ptr) {
-                debug.field("prev_in_result", &format!("SweepEvent({ptr})"));
+        if let Some(prev) = selfz.prev_in_result {
+            let id = self.arena[prev].id;
+            if self.visited.borrow().contains(&id) {
+                debug.field("prev_in_result", &format!("SweepEvent({:?})", id));
             } else {
                 debug.field(
                     "prev_in_result",
                     &SweepEventDebug {
-                        inner: prev.clone(),
+                        inner: self.arena[prev].clone(),
                         visited: self.visited.clone(),
+                        arena: self.arena,
                     },
                 );
             }
@@ -297,7 +302,7 @@ impl SweepEventDebug {
 }
 
 #[cfg(test)]
-impl core::fmt::Debug for SweepEventDebug {
+impl core::fmt::Debug for SweepEventDebug<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.debug(f)
     }
@@ -306,141 +311,151 @@ impl core::fmt::Debug for SweepEventDebug {
 #[cfg(test)]
 #[allow(clippy::bool_assert_comparison)]
 mod tests {
-    use crate::sweep_event::{SweepEvent, SweepEventDeepEqual};
+    use crate::sweep_event::{SweepEvent, SweepEventArena, SweepEventDeepEqual};
 
     #[test]
     fn sweep_event_is_below() {
-        let s1 = SweepEvent::new(
+        let mut arena = SweepEventArena::new();
+        let (s1, _) = SweepEvent::new(
             [0.0, 0.0],
             true,
-            Some(SweepEvent::with_point_and_left([1.0, 1.0], false)),
+            Some(SweepEvent::with_point_and_left([1.0, 1.0], false, &mut arena).1),
             false,
             None,
+            &mut arena,
         );
-        let s2 = SweepEvent::new(
+        let (s2, _) = SweepEvent::new(
             [0.0, 1.0],
             false,
-            Some(SweepEvent::with_point_and_left([0.0, 0.0], false)),
+            Some(SweepEvent::with_point_and_left([0.0, 0.0], false, &mut arena).1),
             false,
             None,
+            &mut arena,
         );
 
-        assert_eq!(s1.borrow().is_below(&[0.0, 1.0]), true);
-        assert_eq!(s1.borrow().is_below(&[1.0, 2.0]), true);
-        assert_eq!(s1.borrow().is_below(&[0.0, 0.0]), false);
-        assert_eq!(s1.borrow().is_below(&[5.0, -1.0]), false);
+        assert_eq!(s1.is_below(&[0.0, 1.0], &arena), true);
+        assert_eq!(s1.is_below(&[1.0, 2.0], &arena), true);
+        assert_eq!(s1.is_below(&[0.0, 0.0], &arena), false);
+        assert_eq!(s1.is_below(&[5.0, -1.0], &arena), false);
 
-        assert_eq!(s2.borrow().is_below(&[0.0, 1.0]), false);
-        assert_eq!(s2.borrow().is_below(&[1.0, 2.0]), false);
-        assert_eq!(s2.borrow().is_below(&[0.0, 0.0]), false);
-        assert_eq!(s2.borrow().is_below(&[5.0, -1.0]), false);
+        assert_eq!(s2.is_below(&[0.0, 1.0], &arena), false);
+        assert_eq!(s2.is_below(&[1.0, 2.0], &arena), false);
+        assert_eq!(s2.is_below(&[0.0, 0.0], &arena), false);
+        assert_eq!(s2.is_below(&[5.0, -1.0], &arena), false);
     }
 
     #[test]
     fn sweep_event_is_above() {
-        let s1 = SweepEvent::new(
+        let mut arena = SweepEventArena::new();
+        let (s1, _) = SweepEvent::new(
             [0.0, 0.0],
             true,
-            Some(SweepEvent::with_point_and_left([1.0, 1.0], false)),
+            Some(SweepEvent::with_point_and_left([1.0, 1.0], false, &mut arena).1),
             false,
             None,
+            &mut arena,
         );
-        let s2 = SweepEvent::new(
+        let (s2, _) = SweepEvent::new(
             [0.0, 1.0],
             false,
-            Some(SweepEvent::with_point_and_left([0.0, 0.0], false)),
+            Some(SweepEvent::with_point_and_left([0.0, 0.0], false, &mut arena).1),
             false,
             None,
+            &mut arena,
         );
 
-        assert_eq!(s1.borrow().is_above(&[0.0, 1.0]), false);
-        assert_eq!(s1.borrow().is_above(&[1.0, 2.0]), false);
-        assert_eq!(s1.borrow().is_above(&[0.0, 0.0]), true);
-        assert_eq!(s1.borrow().is_above(&[5.0, -1.0]), true);
+        assert_eq!(s1.is_above(&[0.0, 1.0], &arena), false);
+        assert_eq!(s1.is_above(&[1.0, 2.0], &arena), false);
+        assert_eq!(s1.is_above(&[0.0, 0.0], &arena), true);
+        assert_eq!(s1.is_above(&[5.0, -1.0], &arena), true);
 
-        assert_eq!(s2.borrow().is_above(&[0.0, 1.0]), true);
-        assert_eq!(s2.borrow().is_above(&[1.0, 2.0]), true);
-        assert_eq!(s2.borrow().is_above(&[0.0, 0.0]), true);
-        assert_eq!(s2.borrow().is_above(&[5.0, -1.0]), true);
+        assert_eq!(s2.is_above(&[0.0, 1.0], &arena), true);
+        assert_eq!(s2.is_above(&[1.0, 2.0], &arena), true);
+        assert_eq!(s2.is_above(&[0.0, 0.0], &arena), true);
+        assert_eq!(s2.is_above(&[5.0, -1.0], &arena), true);
     }
 
     #[test]
     fn sweep_event_is_vertical() {
+        let mut arena = SweepEventArena::new();
         assert_eq!(
             SweepEvent::new(
                 [0.0, 0.0],
                 true,
-                Some(SweepEvent::with_point_and_left([0.0, 1.0], false)),
+                Some(SweepEvent::with_point_and_left([0.0, 1.0], false, &mut arena).1),
                 false,
                 None,
+                &mut arena,
             )
-            .borrow()
-            .is_vertical(),
+            .0
+            .is_vertical(&arena),
             true,
         );
         assert_eq!(
             SweepEvent::new(
                 [0.0, 0.0],
                 true,
-                Some(SweepEvent::with_point_and_left([0.0001, 1.0], false)),
+                Some(SweepEvent::with_point_and_left([0.0001, 1.0], false, &mut arena).1),
                 false,
                 None,
+                &mut arena,
             )
-            .borrow()
-            .is_vertical(),
+            .0
+            .is_vertical(&arena),
             false,
         );
     }
 
     #[test]
     fn sweep_event_deep_equal() {
-        let se1 = SweepEvent::new([0.1, 0.1], true, None, true, None);
+        let mut arena = SweepEventArena::new();
+        let (se1, _) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
         let se2 = se1.clone();
         assert_eq!(
-            SweepEventDeepEqual(se1),
-            SweepEventDeepEqual(se2),
+            SweepEventDeepEqual(se1, &arena),
+            SweepEventDeepEqual(se2, &arena),
             "point to the same memory"
         );
 
-        let se1 = SweepEvent::new([0.1, 0.1], true, None, true, None);
-        let se2 = SweepEvent::new([0.1, 0.1], true, None, true, None);
+        let (se1, _) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
+        let (se2, _) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
         assert_eq!(
-            SweepEventDeepEqual(se1),
-            SweepEventDeepEqual(se2),
+            SweepEventDeepEqual(se1, &arena),
+            SweepEventDeepEqual(se2, &arena),
             "different memory, same value and descendants"
         );
 
-        let se1 = SweepEvent::new([0.1, 0.1], true, None, true, None);
-        let se2 = SweepEvent::new([0.1, 0.1], true, Some(se1.clone()), true, None);
-        se1.borrow_mut().other_event = Some(se2.clone());
+        let (mut se1, se1_id) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
+        let (_, se2_id) = SweepEvent::new([0.1, 0.1], true, Some(se1_id), true, None, &mut arena);
+        se1.other_event = Some(se2_id);
         let se3 = se1.clone();
         assert_eq!(
-            SweepEventDeepEqual(se1),
-            SweepEventDeepEqual(se3),
+            SweepEventDeepEqual(se1, &arena),
+            SweepEventDeepEqual(se3, &arena),
             "same memory, cyclic"
         );
 
-        let se1 = SweepEvent::new([0.1, 0.1], true, None, true, None);
-        let se2 = SweepEvent::new([0.1, 0.1], true, Some(se1.clone()), true, None);
-        se1.borrow_mut().other_event = Some(se2.clone());
-        let se3 = SweepEvent::new([0.1, 0.1], true, None, true, None);
-        let se4 = SweepEvent::new([0.1, 0.1], true, Some(se3.clone()), true, None);
-        se3.borrow_mut().other_event = Some(se4.clone());
+        let (mut se1, se1_id) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
+        let (_, se2_id) = SweepEvent::new([0.1, 0.1], true, Some(se1_id), true, None, &mut arena);
+        se1.other_event = Some(se2_id);
+        let (mut se3, se3_id) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
+        let (_, se4_id) = SweepEvent::new([0.1, 0.1], true, Some(se3_id), true, None, &mut arena);
+        se3.other_event = Some(se4_id);
         assert_eq!(
-            SweepEventDeepEqual(se1),
-            SweepEventDeepEqual(se3),
+            SweepEventDeepEqual(se1, &arena),
+            SweepEventDeepEqual(se3, &arena),
             "different memory, same value and descendants, cyclic"
         );
 
-        let se1 = SweepEvent::new([0.1, 0.1], true, None, true, None);
-        let se2 = SweepEvent::new([0.1, 0.1], true, Some(se1.clone()), true, None);
-        se1.borrow_mut().other_event = Some(se2.clone());
-        let se3 = SweepEvent::new([0.1, 0.1], true, None, true, None);
-        let se4 = SweepEvent::new([0.1, 0.2], true, Some(se3.clone()), true, None);
-        se3.borrow_mut().other_event = Some(se4.clone());
+        let (mut se1, se1_id) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
+        let (_, se2_id) = SweepEvent::new([0.1, 0.1], true, Some(se1_id), true, None, &mut arena);
+        se1.other_event = Some(se2_id);
+        let (mut se3, se3_id) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
+        let (_, se4_id) = SweepEvent::new([0.1, 0.2], true, Some(se3_id), true, None, &mut arena);
+        se3.other_event = Some(se4_id);
         assert_ne!(
-            SweepEventDeepEqual(se1),
-            SweepEventDeepEqual(se3),
+            SweepEventDeepEqual(se1, &arena),
+            SweepEventDeepEqual(se3, &arena),
             "different value, cyclic"
         );
     }

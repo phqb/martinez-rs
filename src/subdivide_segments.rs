@@ -1,92 +1,69 @@
-use core::{cell::RefCell, cmp::Reverse};
-use std::rc::Rc;
-
 use crate::{
     compute_fields::compute_fields,
-    min_heap::MinHeap,
+    min_heap::MinHeapByCompareEvents,
     operation::Operation,
     possible_intersection::possible_intersection,
-    sweep_event::{SweepEvent, SweepEventOrderedByCompareEvent, SweepEventOrderedByCompareSegment}, tree::SweepEventTree,
+    sweep_event::{SweepEventArena, SweepEventId},
+    tree::TreeByCompareSegments,
 };
 
 pub(crate) fn subdivide(
-    event_queue: &mut MinHeap<SweepEventOrderedByCompareEvent>,
+    event_queue: &mut MinHeapByCompareEvents,
     sbbox: &[f64; 4],
     cbbox: &[f64; 4],
     operation: Operation,
-) -> Vec<Rc<RefCell<SweepEvent>>> {
-    let mut sweep_line = SweepEventTree::new();
-    let mut sorted_events: Vec<Rc<RefCell<SweepEvent>>> = vec![];
+    arena: &mut SweepEventArena,
+) -> Vec<SweepEventId> {
+    let mut sweep_line = TreeByCompareSegments::new();
+    let mut sorted_events: Vec<SweepEventId> = vec![];
 
     let right_bound = sbbox[2].min(cbbox[2]);
 
-    while let Some(Reverse(SweepEventOrderedByCompareEvent(event))) = event_queue.pop() {
-        sorted_events.push(event.clone());
+    while let Some(event) = event_queue.pop(arena) {
+        sorted_events.push(event);
 
         // optimization by bboxes for intersection and difference goes here
-        if (operation == Operation::Intersection && event.borrow().point[0] > right_bound)
-            || (operation == Operation::Difference && event.borrow().point[0] > sbbox[2])
+        if (operation == Operation::Intersection && arena[event].point[0] > right_bound)
+            || (operation == Operation::Difference && arena[event].point[0] > sbbox[2])
         {
             break;
         }
 
-        if event.borrow().left {
-            let event_index = sweep_line.insert(SweepEventOrderedByCompareSegment(event.clone()));
+        if arena[event].left {
+            let event_node = sweep_line.insert(event, arena);
 
-            let prev = if event_index > 0 {
-                Some(sweep_line[event_index - 1].0.clone())
-            } else {
-                None
-            };
+            let prev = sweep_line.prev(event_node);
+            let prev_event = prev.map(|node| node.value);
+            let next = sweep_line.next(event_node);
+            let next_event = next.map(|node| node.value);
 
-            let next = if event_index + 1 < sweep_line.len() {
-                Some(sweep_line[event_index + 1].0.clone())
-            } else {
-                None
-            };
+            compute_fields(event, prev_event, operation, arena);
 
-            compute_fields(event.clone(), prev.clone(), operation);
-
-            if let Some(next) = next {
-                if possible_intersection(event.clone(), next.clone(), event_queue) == 2 {
-                    compute_fields(event.clone(), prev.clone(), operation);
-                    compute_fields(next.clone(), Some(event.clone()), operation);
+            if let Some(next_event) = next_event {
+                if possible_intersection(event, next_event, event_queue, arena) == 2 {
+                    compute_fields(event, prev_event, operation, arena);
+                    compute_fields(next_event, Some(event), operation, arena);
                 }
             }
 
-            if let Some(prev) = prev {
-                if possible_intersection(prev.clone(), event.clone(), event_queue) == 2 {
-                    let prevprev = if event_index > 1 {
-                        Some(sweep_line[event_index - 2].0.clone())
-                    } else {
-                        None
-                    };
-                    compute_fields(prev.clone(), prevprev.clone(), operation);
-                    compute_fields(event.clone(), Some(prev.clone()), operation);
+            if let (Some(prev), Some(prev_event)) = (prev, prev_event) {
+                if possible_intersection(prev_event, event, event_queue, arena) == 2 {
+                    let prevprev_event = sweep_line.prev(prev).map(|node| node.value);
+                    compute_fields(prev_event, prevprev_event, operation, arena);
+                    compute_fields(event, Some(prev_event), operation, arena);
                 }
             }
         } else {
-            let event = event.borrow().other_event.as_ref().unwrap().clone();
-            let event_index = sweep_line
-                .iter()
-                .position(|x| x == &SweepEventOrderedByCompareSegment(event.clone()));
-            if let Some(event_index) = event_index {
-                let prev = if event_index > 0 {
-                    Some(sweep_line[event_index - 1].0.clone())
-                } else {
-                    None
-                };
+            let event = arena[event].other_event.unwrap();
+            let event_node = sweep_line.find(event, arena);
+            if let Some(event_node) = event_node {
+                let prev = sweep_line.prev(event_node).map(|node| node.value);
+                let next = sweep_line.next(event_node).map(|node| node.value);
 
-                let next = if event_index + 1 < sweep_line.len() {
-                    Some(sweep_line[event_index + 1].0.clone())
-                } else {
-                    None
-                };
-
-                sweep_line.remove(event_index);
+                sweep_line.remove(event_node);
 
                 if let (Some(prev), Some(next)) = (prev, next) {
-                    possible_intersection(prev.clone(), next.clone(), event_queue);
+                    possible_intersection(prev, next, event_queue, arena);
                 }
             }
         }

@@ -1,8 +1,15 @@
 use core::cmp::Ordering;
 
-use crate::{signed_area::signed_area, sweep_event::SweepEvent};
+use crate::{
+    signed_area::signed_area,
+    sweep_event::{SweepEvent, SweepEventArena},
+};
 
-pub(crate) fn compare_events(e1: &SweepEvent, e2: &SweepEvent) -> Ordering {
+pub(crate) fn compare_events(
+    e1: &SweepEvent,
+    e2: &SweepEvent,
+    arena: &SweepEventArena,
+) -> Ordering {
     let p1 = e1.point;
     let p2 = e2.point;
 
@@ -24,10 +31,10 @@ pub(crate) fn compare_events(e1: &SweepEvent, e2: &SweepEvent) -> Ordering {
         }
     }
 
-    special_cases(e1, e2)
+    special_cases(e1, e2, arena)
 }
 
-fn special_cases(e1: &SweepEvent, e2: &SweepEvent) -> Ordering {
+fn special_cases(e1: &SweepEvent, e2: &SweepEvent, arena: &SweepEventArena) -> Ordering {
     let p1 = e1.point;
 
     // Same coordinates, but one is a left endpoint and the other is
@@ -45,12 +52,15 @@ fn special_cases(e1: &SweepEvent, e2: &SweepEvent) -> Ordering {
     // not collinear
     if signed_area(
         &p1,
-        &e1.other_event.as_ref().unwrap().borrow().point,
-        &e2.other_event.as_ref().unwrap().borrow().point,
+        &arena[e1.other_event.expect("SweepEvent.other_event")].point,
+        &arena[e2.other_event.expect("SweepEvent.other_event")].point,
     ) != 0.0
     {
         // the event associate to the bottom segment is processed first
-        if !e1.is_below(&e2.other_event.as_ref().unwrap().borrow().point) {
+        if !e1.is_below(
+            &arena[e2.other_event.expect("SweepEvent.other_event")].point,
+            arena,
+        ) {
             return Ordering::Greater;
         } else {
             return Ordering::Less;
@@ -66,131 +76,143 @@ fn special_cases(e1: &SweepEvent, e2: &SweepEvent) -> Ordering {
 
 #[cfg(test)]
 mod tests {
-    use core::cmp::{Ordering, Reverse};
+    use core::cmp::Ordering;
 
     use crate::{
         compare_events::compare_events,
-        min_heap::MinHeap,
-        sweep_event::{SweepEvent, SweepEventDeepEqual, SweepEventOrderedByCompareEvent},
+        min_heap::MinHeapByCompareEvents,
+        sweep_event::{SweepEvent, SweepEventArena, SweepEventDeepEqual},
     };
 
     #[test]
     fn queue_should_process_least_by_x_sweep_event_first() {
-        let mut queue: MinHeap<SweepEventOrderedByCompareEvent> = MinHeap::new();
-        let e1 = SweepEvent::with_point([0.0, 0.0]);
-        let e2 = SweepEvent::with_point([0.5, 0.5]);
+        let mut arena = SweepEventArena::new();
+        let mut queue = MinHeapByCompareEvents::new();
+        let (e1, e1_id) = SweepEvent::with_point([0.0, 0.0], &mut arena);
+        let (e2, e2_id) = SweepEvent::with_point([0.5, 0.5], &mut arena);
 
-        queue.push(Reverse(SweepEventOrderedByCompareEvent(e1.clone())));
-        queue.push(Reverse(SweepEventOrderedByCompareEvent(e2.clone())));
+        queue.push(e1_id, &arena);
+        queue.push(e2_id, &arena);
 
         assert_eq!(
-            Some(SweepEventDeepEqual(e1)),
-            queue.pop().map(|e| SweepEventDeepEqual(e.0.0.clone()))
+            Some(SweepEventDeepEqual(e1, &arena)),
+            queue
+                .pop(&arena)
+                .map(|e| SweepEventDeepEqual(arena[e].clone(), &arena))
         );
         assert_eq!(
-            Some(SweepEventDeepEqual(e2)),
-            queue.pop().map(|e| SweepEventDeepEqual(e.0.0.clone()))
+            Some(SweepEventDeepEqual(e2, &arena)),
+            queue
+                .pop(&arena)
+                .map(|e| SweepEventDeepEqual(arena[e].clone(), &arena))
         );
     }
 
     #[test]
     fn queue_should_process_least_by_y_sweep_event_first() {
-        let mut queue: MinHeap<SweepEventOrderedByCompareEvent> = MinHeap::new();
-        let e1 = SweepEvent::with_point([0.0, 0.0]);
-        let e2 = SweepEvent::with_point([0.0, 0.5]);
+        let mut arena = SweepEventArena::new();
+        let mut queue = MinHeapByCompareEvents::new();
+        let (e1, e1_id) = SweepEvent::with_point([0.0, 0.0], &mut arena);
+        let (e2, e2_id) = SweepEvent::with_point([0.0, 0.5], &mut arena);
 
-        queue.push(Reverse(SweepEventOrderedByCompareEvent(e1.clone())));
-        queue.push(Reverse(SweepEventOrderedByCompareEvent(e2.clone())));
+        queue.push(e1_id, &arena);
+        queue.push(e2_id, &arena);
 
         assert_eq!(
-            Some(SweepEventDeepEqual(e1)),
-            queue.pop().map(|e| SweepEventDeepEqual(e.0.0.clone()))
+            Some(SweepEventDeepEqual(e1, &arena)),
+            queue
+                .pop(&arena)
+                .map(|e| SweepEventDeepEqual(arena[e].clone(), &arena))
         );
         assert_eq!(
-            Some(SweepEventDeepEqual(e2)),
-            queue.pop().map(|e| SweepEventDeepEqual(e.0.0.clone()))
+            Some(SweepEventDeepEqual(e2, &arena)),
+            queue
+                .pop(&arena)
+                .map(|e| SweepEventDeepEqual(arena[e].clone(), &arena))
         );
     }
 
     #[test]
     fn queue_should_pop_least_by_left_prop_sweep_event_first() {
-        let mut queue: MinHeap<SweepEventOrderedByCompareEvent> = MinHeap::new();
-        let e1 = SweepEvent::with_point_and_left([0.0, 0.0], true);
-        let e2 = SweepEvent::with_point_and_left([0.0, 0.0], false);
+        let mut arena = SweepEventArena::new();
+        let mut queue = MinHeapByCompareEvents::new();
+        let (e1, e1_id) = SweepEvent::with_point_and_left([0.0, 0.0], true, &mut arena);
+        let (e2, e2_id) = SweepEvent::with_point_and_left([0.0, 0.0], false, &mut arena);
 
-        queue.push(Reverse(SweepEventOrderedByCompareEvent(e1.clone())));
-        queue.push(Reverse(SweepEventOrderedByCompareEvent(e2.clone())));
+        queue.push(e1_id, &arena);
+        queue.push(e2_id, &arena);
 
         assert_eq!(
-            Some(SweepEventDeepEqual(e2)),
-            queue.pop().map(|e| SweepEventDeepEqual(e.0.0.clone()))
+            Some(SweepEventDeepEqual(e2, &arena)),
+            queue
+                .pop(&arena)
+                .map(|e| SweepEventDeepEqual(arena[e].clone(), &arena))
         );
         assert_eq!(
-            Some(SweepEventDeepEqual(e1)),
-            queue.pop().map(|e| SweepEventDeepEqual(e.0.0.clone()))
+            Some(SweepEventDeepEqual(e1, &arena)),
+            queue
+                .pop(&arena)
+                .map(|e| SweepEventDeepEqual(arena[e].clone(), &arena))
         );
     }
 
     #[test]
     fn sweep_event_comparision_x_coordinates() {
-        let e1 = SweepEvent::with_point([0.0, 0.0]);
-        let e2 = SweepEvent::with_point([0.5, 0.5]);
+        let mut arena = SweepEventArena::new();
+        let (e1, _) = SweepEvent::with_point([0.0, 0.0], &mut arena);
+        let (e2, _) = SweepEvent::with_point([0.5, 0.5], &mut arena);
 
-        assert_eq!(compare_events(&e1.borrow(), &e2.borrow()), Ordering::Less);
-        assert_eq!(
-            compare_events(&e2.borrow(), &e1.borrow()),
-            Ordering::Greater
-        );
+        assert_eq!(compare_events(&e1, &e2, &arena), Ordering::Less);
+        assert_eq!(compare_events(&e2, &e1, &arena), Ordering::Greater);
     }
 
     #[test]
     fn sweep_event_comparision_y_coordinates() {
-        let e1 = SweepEvent::with_point([0.0, 0.0]);
-        let e2 = SweepEvent::with_point([0.0, 0.5]);
+        let mut arena = SweepEventArena::new();
+        let (e1, _) = SweepEvent::with_point([0.0, 0.0], &mut arena);
+        let (e2, _) = SweepEvent::with_point([0.0, 0.5], &mut arena);
 
-        assert_eq!(compare_events(&e1.borrow(), &e2.borrow()), Ordering::Less);
-        assert_eq!(
-            compare_events(&e2.borrow(), &e1.borrow()),
-            Ordering::Greater
-        );
+        assert_eq!(compare_events(&e1, &e2, &arena), Ordering::Less);
+        assert_eq!(compare_events(&e2, &e1, &arena), Ordering::Greater);
     }
 
     #[test]
     fn sweep_event_comparision_not_left_first() {
-        let e1 = SweepEvent::with_point_and_left([0.0, 0.0], true);
-        let e2 = SweepEvent::with_point_and_left([0.0, 0.0], false);
+        let mut arena = SweepEventArena::new();
+        let (e1, _) = SweepEvent::with_point_and_left([0.0, 0.0], true, &mut arena);
+        let (e2, _) = SweepEvent::with_point_and_left([0.0, 0.0], false, &mut arena);
 
-        assert_eq!(
-            compare_events(&e1.borrow(), &e2.borrow()),
-            Ordering::Greater
-        );
-        assert_eq!(compare_events(&e2.borrow(), &e1.borrow()), Ordering::Less);
+        assert_eq!(compare_events(&e1, &e2, &arena), Ordering::Greater);
+        assert_eq!(compare_events(&e2, &e1, &arena), Ordering::Less);
     }
 
     #[test]
     fn sweep_event_comparison_shared_start_point_not_collinear_edges() {
-        let e1 = SweepEvent::new(
+        let mut arena = SweepEventArena::new();
+        let (e1, _) = SweepEvent::new(
             [0.0, 0.0],
             true,
-            Some(SweepEvent::with_point_and_left([1.0, 1.0], false)),
+            Some(SweepEvent::with_point_and_left([1.0, 1.0], false, &mut arena).1),
             false,
             None,
+            &mut arena,
         );
-        let e2 = SweepEvent::new(
+        let (e2, _) = SweepEvent::new(
             [0.0, 0.0],
             true,
-            Some(SweepEvent::with_point_and_left([2.0, 3.0], false)),
+            Some(SweepEvent::with_point_and_left([2.0, 3.0], false, &mut arena).1),
             false,
             None,
+            &mut arena,
         );
 
         assert_eq!(
-            compare_events(&e1.borrow(), &e2.borrow()),
+            compare_events(&e1, &e2, &arena),
             Ordering::Less,
             "lower is processed first"
         );
         assert_eq!(
-            compare_events(&e2.borrow(), &e1.borrow()),
+            compare_events(&e2, &e1, &arena),
             Ordering::Greater,
             "higher is processed second"
         );
@@ -198,28 +220,31 @@ mod tests {
 
     #[test]
     fn sweep_event_comparison_collinear_edges() {
-        let e1 = SweepEvent::new(
+        let mut arena = SweepEventArena::new();
+        let (e1, _) = SweepEvent::new(
             [0.0, 0.0],
             true,
-            Some(SweepEvent::with_point_and_left([1.0, 1.0], false)),
+            Some(SweepEvent::with_point_and_left([1.0, 1.0], false, &mut arena).1),
             true,
             None,
+            &mut arena,
         );
-        let e2 = SweepEvent::new(
+        let (e2, _) = SweepEvent::new(
             [0.0, 0.0],
             true,
-            Some(SweepEvent::with_point_and_left([2.0, 2.0], false)),
+            Some(SweepEvent::with_point_and_left([2.0, 2.0], false, &mut arena).1),
             false,
             None,
+            &mut arena,
         );
 
         assert_eq!(
-            compare_events(&e1.borrow(), &e2.borrow()),
+            compare_events(&e1, &e2, &arena),
             Ordering::Less,
             "clipping is processed first"
         );
         assert_eq!(
-            compare_events(&e2.borrow(), &e1.borrow()),
+            compare_events(&e2, &e1, &arena),
             Ordering::Greater,
             "subject is processed second"
         );

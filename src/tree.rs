@@ -1,75 +1,72 @@
-use std::ops::Deref;
+use core::cmp::Ordering;
 
-use crate::sweep_event::SweepEventOrderedByCompareSegment;
+use crate::{
+    compare_segments::compare_segments,
+    sweep_event::{SweepEventArena, SweepEventId},
+};
 
-pub(crate) struct SweepEventTree(pub Vec<SweepEventOrderedByCompareSegment>);
+#[derive(Clone, Copy)]
+pub(crate) struct Node {
+    pub value: SweepEventId,
+    index: usize,
+}
 
-impl SweepEventTree {
+pub(crate) struct TreeByCompareSegments(Vec<SweepEventId>);
+
+impl TreeByCompareSegments {
     pub fn new() -> Self {
         Self(vec![])
     }
 
-    pub fn insert(&mut self, x: SweepEventOrderedByCompareSegment) -> usize {
-        let index = self.0.binary_search(&x).unwrap_or_else(|e| e);
-        self.0.insert(index, x);
-        index
+    pub fn insert(&mut self, se: SweepEventId, arena: &SweepEventArena) -> Node {
+        let index = self
+            .0
+            .binary_search_by(|e_id| compare_segments(&arena[*e_id], &arena[se], arena))
+            .unwrap_or_else(|e| e);
+        self.0.insert(index, se);
+        Node { value: se, index }
     }
 
-    pub fn remove(&mut self, index: usize) {
-        self.0.remove(index);
+    pub fn remove(&mut self, node_id: Node) {
+        self.0.remove(node_id.index);
     }
 
-    #[cfg(test)]
-    pub fn find(
-        &self,
-        x: &SweepEventOrderedByCompareSegment,
-    ) -> Option<SweepEventOrderedByCompareSegment> {
-        self.0.iter().find(|e| *e == x).cloned()
+    pub fn find(&self, se: SweepEventId, arena: &SweepEventArena) -> Option<Node> {
+        self.0
+            .iter()
+            .position(|e_id| compare_segments(&arena[*e_id], &arena[se], arena) == Ordering::Equal)
+            .map(|index| Node { value: se, index })
     }
 
-    #[cfg(test)]
-    pub fn next(
-        &self,
-        x: &SweepEventOrderedByCompareSegment,
-    ) -> Option<SweepEventOrderedByCompareSegment> {
-        self.0.iter().position(|e| e == x).and_then(|i| {
-            if i + 1 < self.0.len() {
-                Some(self.0[i + 1].clone())
-            } else {
-                None
-            }
-        })
+    pub fn next(&self, node: Node) -> Option<Node> {
+        if node.index + 1 < self.0.len() {
+            Some(Node {
+                value: self.0[node.index + 1],
+                index: node.index + 1,
+            })
+        } else {
+            None
+        }
     }
 
-    #[cfg(test)]
-    pub fn prev(
-        &self,
-        x: &SweepEventOrderedByCompareSegment,
-    ) -> Option<SweepEventOrderedByCompareSegment> {
-        self.0.iter().position(|e| e == x).and_then(|i| {
-            if i > 0 {
-                Some(self.0[i - 1].clone())
-            } else {
-                None
-            }
-        })
+    pub fn prev(&self, node: Node) -> Option<Node> {
+        if node.index > 0 {
+            Some(Node {
+                value: self.0[node.index - 1],
+                index: node.index - 1,
+            })
+        } else {
+            None
+        }
     }
 
     #[cfg(test)]
-    pub fn min(&self) -> Option<SweepEventOrderedByCompareSegment> {
+    pub fn min(&self, _: &SweepEventArena) -> Option<SweepEventId> {
         self.0.first().cloned()
     }
 
     #[cfg(test)]
-    pub fn max(&self) -> Option<SweepEventOrderedByCompareSegment> {
+    pub fn max(&self, _: &SweepEventArena) -> Option<SweepEventId> {
         self.0.last().cloned()
-    }
-}
-
-impl Deref for SweepEventTree {
-    type Target = Vec<SweepEventOrderedByCompareSegment>;
-    
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
