@@ -4,7 +4,7 @@ use crate::{
     operation::Operation,
     possible_intersection::possible_intersection,
     sweep_event::{SweepEventArena, SweepEventId},
-    tree::TreeByCompareSegments,
+    tree_by_compare_segments::TreeByCompareSegments,
 };
 
 pub(crate) fn subdivide(
@@ -32,10 +32,10 @@ pub(crate) fn subdivide(
         if arena[event].left {
             let event_node = sweep_line.insert(event, arena);
 
-            let prev = sweep_line.prev(event_node);
-            let prev_event = prev.map(|node| node.value);
-            let next = sweep_line.next(event_node);
-            let next_event = next.map(|node| node.value);
+            let prev = sweep_line.prev(&event_node);
+            let prev_event = prev.as_ref().map(|node| node.value);
+            let next = sweep_line.next(&event_node);
+            let next_event = next.as_ref().map(|node| node.value);
 
             compute_fields(event, prev_event, operation, arena);
 
@@ -48,7 +48,7 @@ pub(crate) fn subdivide(
 
             if let (Some(prev), Some(prev_event)) = (prev, prev_event) {
                 if possible_intersection(prev_event, event, event_queue, arena) == 2 {
-                    let prevprev_event = sweep_line.prev(prev).map(|node| node.value);
+                    let prevprev_event = sweep_line.prev(&prev).map(|node| node.value);
                     compute_fields(prev_event, prevprev_event, operation, arena);
                     compute_fields(event, Some(prev_event), operation, arena);
                 }
@@ -57,8 +57,8 @@ pub(crate) fn subdivide(
             let event = arena[event].other_event.unwrap();
             let event_node = sweep_line.find(event, arena);
             if let Some(event_node) = event_node {
-                let prev = sweep_line.prev(event_node).map(|node| node.value);
-                let next = sweep_line.next(event_node).map(|node| node.value);
+                let prev = sweep_line.prev(&event_node).map(|node| node.value);
+                let next = sweep_line.next(&event_node).map(|node| node.value);
 
                 sweep_line.remove(event_node);
 

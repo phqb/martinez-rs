@@ -28,21 +28,21 @@ fn process_polygon(
             continue; // skip collapsed edges, or it breaks
         }
 
-        let (mut e1, e1_id) = SweepEvent::new(s1, false, None, is_subject, None, arena);
-        let (mut e2, e2_id) = SweepEvent::new(s2, false, Some(e1_id), is_subject, None, arena);
-        e1.other_event = Some(e2_id);
+        let e1_id = SweepEvent::new(s1, false, None, is_subject, None, arena);
+        let e2_id = SweepEvent::new(s2, false, Some(e1_id), is_subject, None, arena);
+        arena[e1_id].other_event = Some(e2_id);
 
-        e1.contour_id = depth;
-        e2.contour_id = depth;
+        arena[e1_id].contour_id = depth;
+        arena[e2_id].contour_id = depth;
         if !is_exterior_ring {
-            e1.is_exterior_ring = false;
-            e2.is_exterior_ring = false;
+            arena[e1_id].is_exterior_ring = false;
+            arena[e2_id].is_exterior_ring = false;
         }
 
-        if compare_events(&e1, &e2, arena) > Ordering::Equal {
-            e2.left = true;
+        if compare_events(&arena[e1_id], &arena[e2_id], arena) > Ordering::Equal {
+            arena[e2_id].left = true;
         } else {
-            e1.left = true;
+            arena[e1_id].left = true;
         }
 
         let x = s1[0];

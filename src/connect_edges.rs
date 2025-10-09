@@ -4,17 +4,17 @@ use std::collections::HashSet;
 use crate::{
     compare_events::compare_events,
     contour::Contour,
-    sweep_event::{ResultTransitionType, SweepEvent, SweepEventArena},
+    sweep_event::{ResultTransitionType, SweepEventArena, SweepEventId},
 };
 
-fn order_events(sorted_events: &[SweepEvent], arena: &mut SweepEventArena) -> Vec<SweepEvent> {
+fn order_events(sorted_events: &[SweepEventId], arena: &mut SweepEventArena) -> Vec<SweepEventId> {
     let mut result_events = vec![];
-    for event in sorted_events {
-        if (event.left && event.in_result())
-            || (!event.left
-                && arena[event.other_event.expect("SweepEvent.other_event")].in_result())
+    for &event in sorted_events {
+        if (arena[event].left && arena[event].in_result())
+            || (!arena[event].left
+                && arena[arena[event].other_event.expect("SweepEvent.other_event")].in_result())
         {
-            result_events.push(event.clone());
+            result_events.push(event);
         }
     }
     // Due to overlapping edges the resultEvents array can be not wholly sorted
@@ -23,8 +23,11 @@ fn order_events(sorted_events: &[SweepEvent], arena: &mut SweepEventArena) -> Ve
         sorted = true;
         for i in 0..result_events.len() {
             if (i + 1) < result_events.len()
-                && compare_events(&result_events[i], &result_events[i + 1], arena)
-                    == Ordering::Greater
+                && compare_events(
+                    &arena[result_events[i]],
+                    &arena[result_events[i + 1]],
+                    arena,
+                ) == Ordering::Greater
             {
                 result_events.swap(i, i + 1);
                 sorted = false;
@@ -34,16 +37,18 @@ fn order_events(sorted_events: &[SweepEvent], arena: &mut SweepEventArena) -> Ve
 
     #[allow(clippy::needless_range_loop)]
     for i in 0..result_events.len() {
-        result_events[i].other_pos = i as i64;
+        arena[result_events[i]].other_pos = i as i64;
     }
 
     // imagine, the right event is found in the beginning of the queue,
     // when his left counterpart is not marked yet
-    for event in result_events.iter_mut() {
-        if !event.left {
-            let tmp = event.other_pos;
-            event.other_pos = arena[event.other_event.expect("SweepEvent.other_event")].other_pos;
-            arena[event.other_event.expect("SweepEvent.other_event")].other_pos = tmp;
+    for &event in result_events.iter() {
+        if !arena[event].left {
+            let tmp = arena[event].other_pos;
+            arena[event].other_pos =
+                arena[arena[event].other_event.expect("SweepEvent.other_event")].other_pos;
+            let other_event = arena[event].other_event.expect("SweepEvent.other_event");
+            arena[other_event].other_pos = tmp;
         }
     }
 
@@ -52,17 +57,18 @@ fn order_events(sorted_events: &[SweepEvent], arena: &mut SweepEventArena) -> Ve
 
 fn next_pos(
     pos: i64,
-    result_events: &[SweepEvent],
+    result_events: &[SweepEventId],
     processed: &HashSet<i64>,
     orig_pos: i64,
+    arena: &SweepEventArena,
 ) -> i64 {
     let mut new_pos = pos + 1;
-    let p = result_events[pos as usize].point;
+    let p = arena[result_events[pos as usize]].point;
     let length = result_events.len() as i64;
     let mut p1 = [0.0; 2];
 
     if new_pos < length {
-        p1 = result_events[new_pos as usize].point;
+        p1 = arena[result_events[new_pos as usize]].point;
     }
 
     while new_pos < length && p1[0] == p[0] && p1[1] == p[1] {
@@ -72,7 +78,7 @@ fn next_pos(
             new_pos += 1;
         }
         if new_pos < length {
-            p1 = result_events[new_pos as usize].point;
+            p1 = arena[result_events[new_pos as usize]].point;
         }
     }
 
@@ -86,13 +92,13 @@ fn next_pos(
 }
 
 fn initialize_contour_from_context(
-    event: &SweepEvent,
+    event: SweepEventId,
     contours: &mut [Contour],
     contour_id: i64,
     arena: &mut SweepEventArena,
 ) -> Contour {
     let mut contour = Contour::default();
-    if let Some(prev_in_result) = event.prev_in_result {
+    if let Some(prev_in_result) = arena[event].prev_in_result {
         let lower_contour_id = arena[prev_in_result].output_contour_id;
         let lower_result_transition = arena[prev_in_result].result_transition;
         if lower_result_transition > ResultTransitionType::NotInResult {
@@ -132,10 +138,10 @@ fn initialize_contour_from_context(
 }
 
 pub(crate) fn connect_edges(
-    sorted_events: &[SweepEvent],
+    sorted_events: &[SweepEventId],
     arena: &mut SweepEventArena,
 ) -> Vec<Contour> {
-    let mut result_events = order_events(sorted_events, arena);
+    let result_events = order_events(sorted_events, arena);
 
     let mut processed = HashSet::<i64>::new();
     let mut contours = vec![];
@@ -147,14 +153,14 @@ pub(crate) fn connect_edges(
 
         let contour_id = contours.len() as i64;
         let mut contour =
-            initialize_contour_from_context(&result_events[i], &mut contours, contour_id, arena);
+            initialize_contour_from_context(result_events[i], &mut contours, contour_id, arena);
 
         // Helper macro that combines marking an event as processed with assigning its output contour ID
         macro_rules! mark_as_processed {
             ($pos:ident) => {
                 processed.insert($pos);
                 if $pos >= 0 && $pos < result_events.len() as i64 {
-                    result_events[$pos as usize].output_contour_id = contour_id;
+                    arena[result_events[$pos as usize]].output_contour_id = contour_id;
                 }
             };
         }
@@ -162,18 +168,20 @@ pub(crate) fn connect_edges(
         let mut pos = i as i64;
         let orig_pos = i as i64;
 
-        let initial = result_events[i].point;
+        let initial = arena[result_events[i]].point;
         contour.points.push(initial);
 
         loop {
             mark_as_processed!(pos);
 
-            pos = result_events[pos as usize].other_pos;
+            pos = arena[result_events[pos as usize]].other_pos;
 
             mark_as_processed!(pos);
-            contour.points.push(result_events[pos as usize].point);
+            contour
+                .points
+                .push(arena[result_events[pos as usize]].point);
 
-            pos = next_pos(pos, &result_events, &processed, orig_pos);
+            pos = next_pos(pos, &result_events, &processed, orig_pos, arena);
 
             if pos == orig_pos || pos >= result_events.len() as i64 || pos < 0 {
                 break;

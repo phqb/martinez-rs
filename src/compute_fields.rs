@@ -94,3 +94,6 @@ fn determine_result_transition(event: &SweepEvent, operation: Operation) -> Resu
         ResultTransitionType::InOut
     }
 }
+
+#[cfg(test)]
+mod tests {}

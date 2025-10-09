@@ -1,6 +1,8 @@
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 #[cfg(test)]
-use std::{cell::RefCell, collections::HashSet, rc::Rc};
+use core::cell::RefCell;
+#[cfg(test)]
+use std::{collections::HashSet, rc::Rc};
 
 use crate::edge_type::EdgeType;
 
@@ -26,6 +28,7 @@ impl Default for SweepEventId {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct SweepEventArena(Vec<SweepEvent>);
 
 impl SweepEventArena {
@@ -81,6 +84,7 @@ pub(crate) struct SweepEvent {
 }
 
 impl SweepEvent {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         point: [f64; 2],
         left: bool,
@@ -88,7 +92,7 @@ impl SweepEvent {
         is_subject: bool,
         edge_type: Option<EdgeType>,
         arena: &mut SweepEventArena,
-    ) -> (Self, SweepEventId) {
+    ) -> SweepEventId {
         let id = SweepEventId(arena.len());
         let event = Self {
             id,
@@ -108,19 +112,19 @@ impl SweepEvent {
             // TODO: Looks unused, remove?
             is_exterior_ring: true,
         };
-        arena.push(event.clone());
-        (event, id)
+        arena.push(event);
+        id
     }
 
     #[cfg(test)]
-    pub fn with_point(point: [f64; 2], arena: &mut SweepEventArena) -> (Self, SweepEventId) {
+    pub fn with_point(point: [f64; 2], arena: &mut SweepEventArena) -> SweepEventId {
         let id = SweepEventId(arena.len());
         let event = Self {
             point,
             ..Default::default()
         };
-        arena.push(event.clone());
-        (event, id)
+        arena.push(event);
+        id
     }
 
     #[cfg(test)]
@@ -128,15 +132,15 @@ impl SweepEvent {
         point: [f64; 2],
         left: bool,
         arena: &mut SweepEventArena,
-    ) -> (Self, SweepEventId) {
+    ) -> SweepEventId {
         let id = SweepEventId(arena.len());
         let event = Self {
             point,
             left,
             ..Default::default()
         };
-        arena.push(event.clone());
-        (event, id)
+        arena.push(event);
+        id
     }
 
     pub fn is_below(&self, p: &[f64; 2], arena: &SweepEventArena) -> bool {
@@ -316,28 +320,38 @@ mod tests {
     #[test]
     fn sweep_event_is_below() {
         let mut arena = SweepEventArena::new();
-        let (s1, _) = SweepEvent::new(
+        let s1_id = SweepEvent::new(
             [0.0, 0.0],
             true,
-            Some(SweepEvent::with_point_and_left([1.0, 1.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [1.0, 1.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
-        let (s2, _) = SweepEvent::new(
+        let s2_id = SweepEvent::new(
             [0.0, 1.0],
             false,
-            Some(SweepEvent::with_point_and_left([0.0, 0.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [0.0, 0.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
 
+        let s1 = arena[s1_id].clone();
         assert_eq!(s1.is_below(&[0.0, 1.0], &arena), true);
         assert_eq!(s1.is_below(&[1.0, 2.0], &arena), true);
         assert_eq!(s1.is_below(&[0.0, 0.0], &arena), false);
         assert_eq!(s1.is_below(&[5.0, -1.0], &arena), false);
 
+        let s2 = arena[s2_id].clone();
         assert_eq!(s2.is_below(&[0.0, 1.0], &arena), false);
         assert_eq!(s2.is_below(&[1.0, 2.0], &arena), false);
         assert_eq!(s2.is_below(&[0.0, 0.0], &arena), false);
@@ -347,28 +361,38 @@ mod tests {
     #[test]
     fn sweep_event_is_above() {
         let mut arena = SweepEventArena::new();
-        let (s1, _) = SweepEvent::new(
+        let s1_id = SweepEvent::new(
             [0.0, 0.0],
             true,
-            Some(SweepEvent::with_point_and_left([1.0, 1.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [1.0, 1.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
-        let (s2, _) = SweepEvent::new(
+        let s2_id = SweepEvent::new(
             [0.0, 1.0],
             false,
-            Some(SweepEvent::with_point_and_left([0.0, 0.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [0.0, 0.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
 
+        let s1 = arena[s1_id].clone();
         assert_eq!(s1.is_above(&[0.0, 1.0], &arena), false);
         assert_eq!(s1.is_above(&[1.0, 2.0], &arena), false);
         assert_eq!(s1.is_above(&[0.0, 0.0], &arena), true);
         assert_eq!(s1.is_above(&[5.0, -1.0], &arena), true);
 
+        let s2 = arena[s2_id].clone();
         assert_eq!(s2.is_above(&[0.0, 1.0], &arena), true);
         assert_eq!(s2.is_above(&[1.0, 2.0], &arena), true);
         assert_eq!(s2.is_above(&[0.0, 0.0], &arena), true);
@@ -379,29 +403,39 @@ mod tests {
     fn sweep_event_is_vertical() {
         let mut arena = SweepEventArena::new();
         assert_eq!(
-            SweepEvent::new(
-                [0.0, 0.0],
-                true,
-                Some(SweepEvent::with_point_and_left([0.0, 1.0], false, &mut arena).1),
-                false,
-                None,
-                &mut arena,
-            )
-            .0
-            .is_vertical(&arena),
+            {
+                let id = SweepEvent::new(
+                    [0.0, 0.0],
+                    true,
+                    Some(SweepEvent::with_point_and_left(
+                        [0.0, 1.0],
+                        false,
+                        &mut arena,
+                    )),
+                    false,
+                    None,
+                    &mut arena,
+                );
+                arena[id].clone().is_vertical(&arena)
+            },
             true,
         );
         assert_eq!(
-            SweepEvent::new(
-                [0.0, 0.0],
-                true,
-                Some(SweepEvent::with_point_and_left([0.0001, 1.0], false, &mut arena).1),
-                false,
-                None,
-                &mut arena,
-            )
-            .0
-            .is_vertical(&arena),
+            {
+                let id = SweepEvent::new(
+                    [0.0, 0.0],
+                    true,
+                    Some(SweepEvent::with_point_and_left(
+                        [0.0001, 1.0],
+                        false,
+                        &mut arena,
+                    )),
+                    false,
+                    None,
+                    &mut arena,
+                );
+                arena[id].clone().is_vertical(&arena)
+            },
             false,
         );
     }
@@ -409,53 +443,51 @@ mod tests {
     #[test]
     fn sweep_event_deep_equal() {
         let mut arena = SweepEventArena::new();
-        let (se1, _) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
-        let se2 = se1.clone();
+        let se1_id = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
         assert_eq!(
-            SweepEventDeepEqual(se1, &arena),
-            SweepEventDeepEqual(se2, &arena),
+            SweepEventDeepEqual(arena[se1_id].clone(), &arena),
+            SweepEventDeepEqual(arena[se1_id].clone(), &arena),
             "point to the same memory"
         );
 
-        let (se1, _) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
-        let (se2, _) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
+        let se1_id = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
+        let se2_id = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
         assert_eq!(
-            SweepEventDeepEqual(se1, &arena),
-            SweepEventDeepEqual(se2, &arena),
+            SweepEventDeepEqual(arena[se1_id].clone(), &arena),
+            SweepEventDeepEqual(arena[se2_id].clone(), &arena),
             "different memory, same value and descendants"
         );
 
-        let (mut se1, se1_id) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
-        let (_, se2_id) = SweepEvent::new([0.1, 0.1], true, Some(se1_id), true, None, &mut arena);
-        se1.other_event = Some(se2_id);
-        let se3 = se1.clone();
+        let se1_id = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
+        let se2_id = SweepEvent::new([0.1, 0.1], true, Some(se1_id), true, None, &mut arena);
+        arena[se1_id].other_event = Some(se2_id);
         assert_eq!(
-            SweepEventDeepEqual(se1, &arena),
-            SweepEventDeepEqual(se3, &arena),
+            SweepEventDeepEqual(arena[se1_id].clone(), &arena),
+            SweepEventDeepEqual(arena[se1_id].clone(), &arena),
             "same memory, cyclic"
         );
 
-        let (mut se1, se1_id) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
-        let (_, se2_id) = SweepEvent::new([0.1, 0.1], true, Some(se1_id), true, None, &mut arena);
-        se1.other_event = Some(se2_id);
-        let (mut se3, se3_id) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
-        let (_, se4_id) = SweepEvent::new([0.1, 0.1], true, Some(se3_id), true, None, &mut arena);
-        se3.other_event = Some(se4_id);
+        let se1_id = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
+        let se2_id = SweepEvent::new([0.1, 0.1], true, Some(se1_id), true, None, &mut arena);
+        arena[se1_id].other_event = Some(se2_id);
+        let se3_id = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
+        let se4_id = SweepEvent::new([0.1, 0.1], true, Some(se3_id), true, None, &mut arena);
+        arena[se3_id].other_event = Some(se4_id);
         assert_eq!(
-            SweepEventDeepEqual(se1, &arena),
-            SweepEventDeepEqual(se3, &arena),
+            SweepEventDeepEqual(arena[se1_id].clone(), &arena),
+            SweepEventDeepEqual(arena[se3_id].clone(), &arena),
             "different memory, same value and descendants, cyclic"
         );
 
-        let (mut se1, se1_id) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
-        let (_, se2_id) = SweepEvent::new([0.1, 0.1], true, Some(se1_id), true, None, &mut arena);
-        se1.other_event = Some(se2_id);
-        let (mut se3, se3_id) = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
-        let (_, se4_id) = SweepEvent::new([0.1, 0.2], true, Some(se3_id), true, None, &mut arena);
-        se3.other_event = Some(se4_id);
+        let se1_id = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
+        let se2_id = SweepEvent::new([0.1, 0.1], true, Some(se1_id), true, None, &mut arena);
+        arena[se1_id].other_event = Some(se2_id);
+        let se3_id = SweepEvent::new([0.1, 0.1], true, None, true, None, &mut arena);
+        let se4_id = SweepEvent::new([0.1, 0.2], true, Some(se3_id), true, None, &mut arena);
+        arena[se3_id].other_event = Some(se4_id);
         assert_ne!(
-            SweepEventDeepEqual(se1, &arena),
-            SweepEventDeepEqual(se3, &arena),
+            SweepEventDeepEqual(arena[se1_id].clone(), &arena),
+            SweepEventDeepEqual(arena[se3_id].clone(), &arena),
             "different value, cyclic"
         );
     }

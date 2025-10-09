@@ -111,7 +111,7 @@ mod tests {
         compare_events::compare_events,
         compare_segments::compare_segments,
         sweep_event::{SweepEvent, SweepEventArena},
-        tree::TreeByCompareSegments,
+        tree_by_compare_segments::TreeByCompareSegments,
     };
     use core::cmp::Ordering;
 
@@ -120,18 +120,26 @@ mod tests {
         let mut arena = SweepEventArena::new();
         let mut tree = TreeByCompareSegments::new();
         let pt = [0.0, 0.0];
-        let (_, se1_id) = SweepEvent::new(
+        let se1_id = SweepEvent::new(
             pt,
             true,
-            Some(SweepEvent::with_point_and_left([1.0, 1.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [1.0, 1.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
-        let (_, se2_id) = SweepEvent::new(
+        let se2_id = SweepEvent::new(
             pt,
             true,
-            Some(SweepEvent::with_point_and_left([2.0, 3.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [2.0, 3.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
@@ -141,11 +149,11 @@ mod tests {
         tree.insert(se1_id, &arena);
 
         assert_eq!(
-            arena[arena[tree.max(&arena).unwrap()].other_event.unwrap()].point,
+            arena[arena[tree.max().unwrap().value].other_event.unwrap()].point,
             [2.0, 3.0]
         );
         assert_eq!(
-            arena[arena[tree.min(&arena).unwrap()].other_event.unwrap()].point,
+            arena[arena[tree.min().unwrap().value].other_event.unwrap()].point,
             [1.0, 1.0]
         );
     }
@@ -154,18 +162,26 @@ mod tests {
     fn compare_segments_not_collinear_different_left_point_right_point_y_coord_to_sort() {
         let mut arena = SweepEventArena::new();
         let mut tree = TreeByCompareSegments::new();
-        let (_, se1_id) = SweepEvent::new(
+        let se1_id = SweepEvent::new(
             [0.0, 1.0],
             true,
-            Some(SweepEvent::with_point_and_left([1.0, 1.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [1.0, 1.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
-        let (_, se2_id) = SweepEvent::new(
+        let se2_id = SweepEvent::new(
             [0.0, 2.0],
             true,
-            Some(SweepEvent::with_point_and_left([2.0, 3.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [2.0, 3.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
@@ -175,11 +191,11 @@ mod tests {
         tree.insert(se1_id, &arena);
 
         assert_eq!(
-            arena[arena[tree.min(&arena).unwrap()].other_event.unwrap()].point,
+            arena[arena[tree.min().unwrap().value].other_event.unwrap()].point,
             [1.0, 1.0]
         );
         assert_eq!(
-            arena[arena[tree.max(&arena).unwrap()].other_event.unwrap()].point,
+            arena[arena[tree.max().unwrap().value].other_event.unwrap()].point,
             [2.0, 3.0]
         );
     }
@@ -187,82 +203,112 @@ mod tests {
     #[test]
     fn compare_segments_not_collinear_events_order_in_sweep_line() {
         let mut arena = SweepEventArena::new();
-        let (se1, _) = SweepEvent::new(
+        let se1_id = SweepEvent::new(
             [0.0, 1.0],
             true,
-            Some(SweepEvent::with_point_and_left([2.0, 1.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [2.0, 1.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
-        let (se2, _) = SweepEvent::new(
+        let se2_id = SweepEvent::new(
             [-1.0, 0.0],
             true,
-            Some(SweepEvent::with_point_and_left([2.0, 3.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [2.0, 3.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
 
-        let (se3, _) = SweepEvent::new(
+        let se3_id = SweepEvent::new(
             [0.0, 1.0],
             true,
-            Some(SweepEvent::with_point_and_left([3.0, 4.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [3.0, 4.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
-        let (se4, _) = SweepEvent::new(
+        let se4_id = SweepEvent::new(
             [-1.0, 0.0],
             true,
-            Some(SweepEvent::with_point_and_left([3.0, 1.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [3.0, 1.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
-
-        assert_eq!(compare_events(&se1, &se2, &arena), Ordering::Greater);
-        assert_eq!(se2.is_below(&se1.point, &arena), false);
-        assert_eq!(se2.is_above(&se1.point, &arena), true);
 
         assert_eq!(
-            compare_segments(&se1, &se2, &arena),
+            compare_events(&arena[se1_id], &arena[se2_id], &arena),
+            Ordering::Greater
+        );
+        assert_eq!(arena[se2_id].is_below(&arena[se1_id].point, &arena), false);
+        assert_eq!(arena[se2_id].is_above(&arena[se1_id].point, &arena), true);
+
+        assert_eq!(
+            compare_segments(&arena[se1_id], &arena[se2_id], &arena),
             Ordering::Less,
             "compare segments",
         );
         assert_eq!(
-            compare_segments(&se2, &se1, &arena),
+            compare_segments(&arena[se2_id], &arena[se1_id], &arena),
             Ordering::Greater,
             "compare segments inverted",
         );
 
-        assert_eq!(compare_events(&se3, &se4, &arena), Ordering::Greater,);
-        assert_eq!(se4.is_above(&se3.point, &arena), false);
+        assert_eq!(
+            compare_events(&arena[se3_id], &arena[se4_id], &arena),
+            Ordering::Greater,
+        );
+        assert_eq!(arena[se4_id].is_above(&arena[se3_id].point, &arena), false);
     }
 
     #[test]
     fn compare_segments_not_collinear_first_point_is_below() {
         let mut arena = SweepEventArena::new();
-        let (se2, _) = SweepEvent::new(
+        let se2_id = SweepEvent::new(
             [0.0, 1.0],
             true,
-            Some(SweepEvent::with_point_and_left([2.0, 1.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [2.0, 1.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
-        let (se1, _) = SweepEvent::new(
+        let se1_id = SweepEvent::new(
             [-1.0, 0.0],
             true,
-            Some(SweepEvent::with_point_and_left([2.0, 3.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [2.0, 3.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
 
-        assert_eq!(se1.is_below(&se2.point, &arena), false);
+        assert_eq!(arena[se1_id].is_below(&arena[se2_id].point, &arena), false);
         assert_eq!(
-            compare_segments(&se1, &se2, &arena),
+            compare_segments(&arena[se1_id], &arena[se2_id], &arena),
             Ordering::Greater,
             "compare segments",
         );
@@ -271,25 +317,36 @@ mod tests {
     #[test]
     fn compare_segments_collinear_segments() {
         let mut arena = SweepEventArena::new();
-        let (se1, _) = SweepEvent::new(
+        let se1_id = SweepEvent::new(
             [1.0, 1.0],
             true,
-            Some(SweepEvent::with_point_and_left([5.0, 1.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [5.0, 1.0],
+                false,
+                &mut arena,
+            )),
             true,
             None,
             &mut arena,
         );
-        let (se2, _) = SweepEvent::new(
+        let se2_id = SweepEvent::new(
             [2.0, 1.0],
             true,
-            Some(SweepEvent::with_point_and_left([3.0, 1.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [3.0, 1.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
 
-        assert_ne!(se1.is_subject, se2.is_subject);
-        assert_eq!(compare_segments(&se1, &se2, &arena), Ordering::Less,);
+        assert_ne!(arena[se1_id].is_subject, arena[se2_id].is_subject);
+        assert_eq!(
+            compare_segments(&arena[se1_id], &arena[se2_id], &arena),
+            Ordering::Less,
+        );
     }
 
     #[test]
@@ -297,60 +354,88 @@ mod tests {
         let mut arena = SweepEventArena::new();
         let pt = [0.0, 1.0];
 
-        let (mut se1, _) = SweepEvent::new(
+        let se1_id = SweepEvent::new(
             pt,
             true,
-            Some(SweepEvent::with_point_and_left([5.0, 1.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [5.0, 1.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
-        let (mut se2, _) = SweepEvent::new(
+        let se2_id = SweepEvent::new(
             pt,
             true,
-            Some(SweepEvent::with_point_and_left([3.0, 1.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [3.0, 1.0],
+                false,
+                &mut arena,
+            )),
             false,
             None,
             &mut arena,
         );
 
-        se1.contour_id = 1;
-        se2.contour_id = 2;
+        arena[se1_id].contour_id = 1;
+        arena[se2_id].contour_id = 2;
 
-        assert_eq!(&se1.is_subject, &se2.is_subject);
-        assert_eq!(&se1.point, &se2.point);
+        assert_eq!(&arena[se1_id].is_subject, &arena[se2_id].is_subject);
+        assert_eq!(&arena[se1_id].point, &arena[se2_id].point);
 
-        assert_eq!(compare_segments(&se1, &se2, &arena), Ordering::Less,);
+        assert_eq!(
+            compare_segments(&arena[se1_id], &arena[se2_id], &arena),
+            Ordering::Less,
+        );
 
-        se1.contour_id = 2;
-        se2.contour_id = 1;
+        arena[se1_id].contour_id = 2;
+        arena[se2_id].contour_id = 1;
 
-        assert_eq!(compare_segments(&se1, &se2, &arena), Ordering::Greater,);
+        assert_eq!(
+            compare_segments(&arena[se1_id], &arena[se2_id], &arena),
+            Ordering::Greater,
+        );
     }
 
     #[test]
     fn compare_segments_collinear_same_polygon_different_left_points() {
         let mut arena = SweepEventArena::new();
-        let (se1, _) = SweepEvent::new(
+        let se1_id = SweepEvent::new(
             [1.0, 1.0],
             true,
-            Some(SweepEvent::with_point_and_left([5.0, 1.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [5.0, 1.0],
+                false,
+                &mut arena,
+            )),
             true,
             None,
             &mut arena,
         );
-        let (se2, _) = SweepEvent::new(
+        let se2_id = SweepEvent::new(
             [2.0, 1.0],
             true,
-            Some(SweepEvent::with_point_and_left([3.0, 1.0], false, &mut arena).1),
+            Some(SweepEvent::with_point_and_left(
+                [3.0, 1.0],
+                false,
+                &mut arena,
+            )),
             true,
             None,
             &mut arena,
         );
 
-        assert_eq!(&se1.is_subject, &se2.is_subject);
-        assert_ne!(&se1.point, &se2.point);
-        assert_eq!(compare_segments(&se1, &se2, &arena), Ordering::Less,);
-        assert_eq!(compare_segments(&se2, &se1, &arena), Ordering::Greater,);
+        assert_eq!(&arena[se1_id].is_subject, &arena[se2_id].is_subject);
+        assert_ne!(&arena[se1_id].point, &arena[se2_id].point);
+        assert_eq!(
+            compare_segments(&arena[se1_id], &arena[se2_id], &arena),
+            Ordering::Less,
+        );
+        assert_eq!(
+            compare_segments(&arena[se2_id], &arena[se1_id], &arena),
+            Ordering::Greater,
+        );
     }
 }

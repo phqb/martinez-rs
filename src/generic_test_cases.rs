@@ -1,19 +1,11 @@
 use geojson::{Feature, GeoJson, Value};
 use test_each_file::test_each_file;
 
-use crate::{MultiPolygon, Polygon};
+use crate::{MultiPolygon, Polygon, test_utils::geojson_multipolygon_to_multipolygon};
 
-test_each_file!(for ["geojson"] in "./test_data/genericTestCases" => generic_test);
+test_each_file!(for ["geojson"] in "./test_data/genericTestCases" => |[data]: [&str; 1]| generic_test([data], None));
 
-fn geojson_multipolygon_to_multipolygon(mp: Vec<Vec<Vec<Vec<f64>>>>) -> MultiPolygon {
-    mp.iter()
-        .map(|poly| {
-            poly.iter()
-                .map(|c| c.iter().map(|p| [p[0], p[1]]).collect::<Vec<_>>())
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>()
-}
+test_each_file!(for ["geojson"] in "./test_data/genericTestCases_compare_10_decimals" => |[data]: [&str; 1]| generic_test([data], Some(10)));
 
 struct OperationAndExpectedResult {
     #[allow(clippy::type_complexity)]
@@ -67,7 +59,7 @@ fn extract_expected_results(features: &[Feature]) -> Vec<OperationAndExpectedRes
         .collect()
 }
 
-fn generic_test([data]: [&str; 1]) {
+fn generic_test([data]: [&str; 1], approx_decimals: Option<usize>) {
     let data = data.parse::<GeoJson>().unwrap();
     let data = if let GeoJson::FeatureCollection(data) = data {
         data
@@ -96,5 +88,33 @@ fn generic_test([data]: [&str; 1]) {
     let expected_results = extract_expected_results(&data.features[2..]);
     for expected_result in expected_results {
         let result = (expected_result.op)(&p1, &p2);
+        if let Some(decimals) = approx_decimals {
+            assert_eq!(
+                Some(round_result(expected_result.expected_result, decimals)),
+                result.map(|r| round_result(r, decimals))
+            );
+        } else {
+            assert_eq!(Some(expected_result.expected_result), result);
+        }
     }
+}
+
+fn round_result(result: Vec<Vec<Vec<[f64; 2]>>>, decimals: usize) -> Vec<Vec<Vec<[String; 2]>>> {
+    result
+        .into_iter()
+        .map(|r| {
+            r.into_iter()
+                .map(|r| {
+                    r.into_iter()
+                        .map(|p| {
+                            [
+                                format!("{:.1$}", p[0], decimals),
+                                format!("{:.1$}", p[1], decimals),
+                            ]
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>()
 }
