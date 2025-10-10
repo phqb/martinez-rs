@@ -1,8 +1,12 @@
-use robust_predicates::orient2d;
+use robust::{Coord, orient2d};
 
 /// Signed area of the triangle (p0, p1, p2)
 pub(crate) fn signed_area(p0: &[f64; 2], p1: &[f64; 2], p2: &[f64; 2]) -> f64 {
-    let res = orient2d(&[p0[0], p0[1]], &[p1[0], p1[1]], &[p2[0], p2[1]]);
+    let res = orient2d(
+        Coord { x: p0[0], y: p0[1] },
+        Coord { x: p1[0], y: p1[1] },
+        Coord { x: p2[0], y: p2[1] },
+    );
     if res > 0.0 {
         1.0
     } else if res < 0.0 {
