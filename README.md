@@ -6,6 +6,7 @@ This is a Rust port of [https://github.com/w8r/martinez@3d55204](https://github.
 
 * Arena-based, no `Rc<RefCell<_>>` shenanigan.
 * Only 1 dependency `robust = "1.2.0"`.
+* Reusing allocation.
 
 ## API
 
@@ -20,9 +21,29 @@ Where
 * `type Polygon = Vec<Vec<Point>>`
 * `type MultiPolygon = Vec<Polygon>`
 
+### Reusing allocation API
+
+```rust
+let mut b = Boolean::new();
+let mut result = ReusableResult::new();
+if b.union(subject, clipping, &mut result).is_some() {
+     for pi in 0..result.num_polygons() { // akin to iterating over MultiPolygon
+          for ci in 0..self.num_contours(pi) { // akin to iterating over Polygon
+               let contour: &[[f64; 2]] = self.contour_points(pi, ci);
+          }
+     }
+}
+
+// then we can reuse b and result like this 
+// b.union(_, _, &mut result)
+// b.diff(_, _, &mut result)
+// b.xor(_, _, &mut result)
+// b.intersection(_, _, &mut result)
+```
+
 ## Benchmark
 
-```
+```bash
 cargo bench --features bench
 ```
 
@@ -42,6 +63,42 @@ Asia union/martinez_rs::union
 State clip/martinez_rs::union
                         time:   [1.2449 ms 1.2733 ms 1.3026 ms]
                         thrpt:  [767.68  elem/s 785.36  elem/s 803.29  elem/s]
+```
+
+### Reusing allocation
+
+```bash
+cargo bench --features bench # to get baseline benchmark
+cargo bench --features bench,bench_reuse
+```
+
+```
+     Running benches/hole_hole.rs (target/release/deps/hole_hole-d1af5d6bea2efcce)
+Hole_Hole/martinez_rs::union
+                        time:   [6.2341 µs 6.3839 µs 6.5479 µs]
+                        thrpt:  [152.72 Kelem/s 156.64 Kelem/s 160.41 Kelem/s]
+                 change:
+                        time:   [−31.270% −27.063% −22.994%] (p = 0.00 < 0.05)
+                        thrpt:  [+29.860% +37.105% +45.497%]
+                        Performance has improved.
+
+     Running benches/asia_union.rs (target/release/deps/asia_union-31194db4689f8931)
+Asia union/martinez_rs::union
+                        time:   [18.359 ms 18.795 ms 19.259 ms]
+                        thrpt:  [51.923  elem/s 53.205  elem/s 54.470  elem/s]
+                 change:
+                        time:   [−8.5921% −5.8915% −2.9318%] (p = 0.00 < 0.05)
+                        thrpt:  [+3.0203% +6.2603% +9.3998%]
+                        Performance has improved.
+
+     Running benches/states_source.rs (target/release/deps/states_source-88f07f73142e6d26)
+State clip/martinez_rs::union
+                        time:   [1.1203 ms 1.1411 ms 1.1640 ms]
+                        thrpt:  [859.08  elem/s 876.37  elem/s 892.61  elem/s]
+                 change:
+                        time:   [−10.283% −5.4709% −0.0627%] (p = 0.04 < 0.05)
+                        thrpt:  [+0.0627% +5.7875% +11.462%]
+                        Change within noise threshold.
 ```
 
 ## Ported tests

@@ -59,6 +59,7 @@ fn process_polygon(
     }
 }
 
+#[cfg(any(test, not(feature = "test_reuse")))]
 pub(crate) fn fill_queue(
     subject: &[Vec<Vec<[f64; 2]>>],
     clipping: &[Vec<Vec<[f64; 2]>>],
@@ -68,6 +69,30 @@ pub(crate) fn fill_queue(
     arena: &mut SweepEventArena,
 ) -> MinHeapByCompareEvents {
     let mut event_queue = MinHeapByCompareEvents::new();
+
+    fill_queue_reuse(
+        subject,
+        clipping,
+        sbbox,
+        cbbox,
+        operation,
+        arena,
+        &mut event_queue,
+    );
+
+    event_queue
+}
+
+pub(crate) fn fill_queue_reuse(
+    subject: &[Vec<Vec<[f64; 2]>>],
+    clipping: &[Vec<Vec<[f64; 2]>>],
+    sbbox: &mut [f64; 4],
+    cbbox: &mut [f64; 4],
+    operation: Option<Operation>,
+    arena: &mut SweepEventArena,
+    event_queue: &mut MinHeapByCompareEvents,
+) {
+    event_queue.clear();
     let mut initial_contour_id = 0i64;
 
     for polygon_set in subject {
@@ -81,7 +106,7 @@ pub(crate) fn fill_queue(
                 true,
                 initial_contour_id,
                 is_exterior_ring,
-                &mut event_queue,
+                event_queue,
                 sbbox,
                 arena,
             );
@@ -102,12 +127,10 @@ pub(crate) fn fill_queue(
                 false,
                 initial_contour_id,
                 is_exterior_ring,
-                &mut event_queue,
+                event_queue,
                 cbbox,
                 arena,
             );
         }
     }
-
-    event_queue
 }

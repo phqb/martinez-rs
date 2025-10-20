@@ -7,6 +7,7 @@ edition = "2024"
 robust = "1.2.0"
 criterion = { version = "=0.7.0", optional = true }
 geojson = { version = "=0.24.2", optional = true }
+cfg-if = { version = "=1.0.4", optional = true }
 
 [dev-dependencies]
 graph_safe_compare = "0.2.1"
@@ -16,7 +17,9 @@ geojson = { version = "=0.24.2" }
 rand = "0.9.2"
 
 [features]
-bench = ["criterion", "geojson"]
+bench = ["criterion", "geojson", "cfg-if"]
+bench_reuse = []
+test_reuse = []
 no_splay_tree = []
 
 [[bench]]

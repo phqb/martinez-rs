@@ -7,6 +7,7 @@ use crate::{
     tree_by_compare_segments::TreeByCompareSegments,
 };
 
+#[cfg(any(test, not(feature = "test_reuse")))]
 pub(crate) fn subdivide(
     event_queue: &mut MinHeapByCompareEvents,
     sbbox: &[f64; 4],
@@ -16,6 +17,31 @@ pub(crate) fn subdivide(
 ) -> Vec<SweepEventId> {
     let mut sweep_line = TreeByCompareSegments::new();
     let mut sorted_events: Vec<SweepEventId> = vec![];
+
+    subdivide_reuse(
+        event_queue,
+        sbbox,
+        cbbox,
+        operation,
+        arena,
+        &mut sweep_line,
+        &mut sorted_events,
+    );
+
+    sorted_events
+}
+
+pub(crate) fn subdivide_reuse(
+    event_queue: &mut MinHeapByCompareEvents,
+    sbbox: &[f64; 4],
+    cbbox: &[f64; 4],
+    operation: Operation,
+    arena: &mut SweepEventArena,
+    sweep_line: &mut TreeByCompareSegments,
+    sorted_events: &mut Vec<SweepEventId>,
+) {
+    sweep_line.clear();
+    sorted_events.clear();
 
     let right_bound = sbbox[2].min(cbbox[2]);
 
@@ -68,6 +94,4 @@ pub(crate) fn subdivide(
             }
         }
     }
-
-    sorted_events
 }

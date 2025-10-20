@@ -57,13 +57,19 @@ impl TreeByCompareSegments {
     }
 }
 
+#[derive(Default)]
 #[cfg(not(feature = "no_splay_tree"))]
 pub(crate) struct TreeByCompareSegments(SplayTree<SweepEventId>);
 
 #[cfg(not(feature = "no_splay_tree"))]
 impl TreeByCompareSegments {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self(SplayTree::new())
+    }
+
+    pub fn clear(&mut self) {
+        self.0.clear();
     }
 
     pub fn insert(&mut self, se: SweepEventId, arena: &SweepEventArena) -> NodeRef<SweepEventId> {

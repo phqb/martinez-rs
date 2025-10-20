@@ -5,13 +5,19 @@ use crate::{
     sweep_event::{SweepEventArena, SweepEventId},
 };
 
+#[derive(Default)]
 pub(crate) struct MinHeap<T> {
     data: Vec<T>,
 }
 
 impl<T> MinHeap<T> {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self { data: vec![] }
+    }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
     }
 
     #[allow(dead_code)]
@@ -112,11 +118,17 @@ impl<T> MinHeap<T> {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct MinHeapByCompareEvents(MinHeap<SweepEventId>);
 
 impl MinHeapByCompareEvents {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self(MinHeap::new())
+    }
+
+    pub fn clear(&mut self) {
+        self.0.clear();
     }
 
     pub fn push(&mut self, id: SweepEventId, arena: &SweepEventArena) {
