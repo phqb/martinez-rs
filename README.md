@@ -24,8 +24,8 @@ Where
 ### Reusing allocation API
 
 ```rust
-let mut b = Boolean::new();
-let mut result = ReusableResult::new();
+let mut b = Boolean::default();
+let mut result = ReusableResult::default();
 if b.union(subject, clipping, &mut result).is_some() {
      for pi in 0..result.num_polygons() { // akin to iterating over MultiPolygon
           for ci in 0..self.num_contours(pi) { // akin to iterating over Polygon
