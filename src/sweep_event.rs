@@ -1,6 +1,6 @@
-use core::ops::{Deref, DerefMut, Index, IndexMut};
 #[cfg(test)]
 use core::cell::RefCell;
+use core::ops::{Deref, DerefMut, Index, IndexMut};
 #[cfg(test)]
 use std::{collections::HashSet, rc::Rc};
 
@@ -28,12 +28,17 @@ impl Default for SweepEventId {
     }
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub(crate) struct SweepEventArena(Vec<SweepEvent>);
 
 impl SweepEventArena {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self(vec![])
+    }
+
+    pub fn clear(&mut self) {
+        self.0.clear();
     }
 }
 

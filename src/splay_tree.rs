@@ -59,6 +59,7 @@ impl SplayTreeNode {
     }
 }
 
+#[derive(Default)]
 #[cfg_attr(test, derive(PartialEq, Eq, Debug))]
 pub(crate) struct SplayTree<T> {
     node_arena: Vec<SplayTreeNode>,
@@ -67,12 +68,19 @@ pub(crate) struct SplayTree<T> {
 }
 
 impl<T: Clone> SplayTree<T> {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             node_arena: vec![],
             value_arena: vec![],
             root: None,
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.node_arena.clear();
+        self.value_arena.clear();
+        self.root = None;
     }
 
     fn len_inner(&self, id: Option<NodeId>) -> usize {

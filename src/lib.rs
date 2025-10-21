@@ -1,6 +1,8 @@
+use crate::operation::Operation;
+#[cfg(not(feature = "test_reuse"))]
 use crate::{
-    connect_edges::connect_edges, fill_queue::fill_queue, operation::Operation,
-    subdivide_segments::subdivide, sweep_event::SweepEventArena,
+    connect_edges::connect_edges, fill_queue::fill_queue, subdivide_segments::subdivide,
+    sweep_event::SweepEventArena,
 };
 
 mod compare_events;
@@ -19,6 +21,7 @@ mod generic_test_cases;
 mod min_heap;
 mod operation;
 mod possible_intersection;
+mod reuse;
 mod segment_intersection;
 mod signed_area;
 #[cfg(feature = "no_splay_tree")]
@@ -33,6 +36,9 @@ mod sweep_line;
 pub mod test_utils;
 mod tree_by_compare_segments;
 
+pub use reuse::{Boolean, ReusableResult};
+
+#[cfg(not(feature = "test_reuse"))]
 fn trivial_operation(
     subject: &[Vec<Vec<[f64; 2]>>],
     clipping: &[Vec<Vec<[f64; 2]>>],
@@ -55,6 +61,7 @@ fn trivial_operation(
     }
 }
 
+#[cfg(not(feature = "test_reuse"))]
 fn compare_bboxes(
     subject: &[Vec<Vec<[f64; 2]>>],
     clipping: &[Vec<Vec<[f64; 2]>>],
@@ -75,6 +82,7 @@ fn compare_bboxes(
     }
 }
 
+#[cfg(not(feature = "test_reuse"))]
 fn boolean(
     subject: &[Vec<Vec<[f64; 2]>>],
     clipping: &[Vec<Vec<[f64; 2]>>],
@@ -131,25 +139,92 @@ pub type Point = [f64; 2];
 pub type Polygon = Vec<Vec<Point>>;
 pub type MultiPolygon = Vec<Polygon>;
 
+#[cfg(not(feature = "test_reuse"))]
 pub fn union(subject: &[Polygon], clipping: &[Polygon]) -> Option<MultiPolygon> {
     boolean(subject, clipping, Operation::Union)
 }
 
+#[cfg(feature = "test_reuse")]
+pub fn union(subject: &[Polygon], clipping: &[Polygon]) -> Option<MultiPolygon> {
+    let mut m = Boolean::default();
+    let mut r = ReusableResult::default();
+    if m.boolean(subject, clipping, Operation::Union, &mut r)
+        .is_some()
+    {
+        Some(r.into_polygons())
+    } else {
+        None
+    }
+}
+
+#[cfg(not(feature = "test_reuse"))]
 pub fn diff(subject: &[Polygon], clipping: &[Polygon]) -> Option<MultiPolygon> {
     boolean(subject, clipping, Operation::Difference)
 }
 
-#[cfg(test)]
+#[cfg(feature = "test_reuse")]
+pub fn diff(subject: &[Polygon], clipping: &[Polygon]) -> Option<MultiPolygon> {
+    let mut m = Boolean::default();
+    let mut r = ReusableResult::default();
+    if m.boolean(subject, clipping, Operation::Difference, &mut r)
+        .is_some()
+    {
+        Some(r.into_polygons())
+    } else {
+        None
+    }
+}
+
+#[cfg(all(test, not(feature = "test_reuse")))]
 pub(crate) fn diff_ba(a: &[Polygon], b: &[Polygon]) -> Option<MultiPolygon> {
     boolean(b, a, Operation::Difference)
 }
 
+#[cfg(all(test, feature = "test_reuse"))]
+pub(crate) fn diff_ba(a: &[Polygon], b: &[Polygon]) -> Option<MultiPolygon> {
+    let mut m = Boolean::default();
+    let mut r = ReusableResult::default();
+    if m.boolean(b, a, Operation::Difference, &mut r).is_some() {
+        Some(r.into_polygons())
+    } else {
+        None
+    }
+}
+
+#[cfg(not(feature = "test_reuse"))]
 pub fn xor(subject: &[Polygon], clipping: &[Polygon]) -> Option<MultiPolygon> {
     boolean(subject, clipping, Operation::Xor)
 }
 
+#[cfg(feature = "test_reuse")]
+pub fn xor(subject: &[Polygon], clipping: &[Polygon]) -> Option<MultiPolygon> {
+    let mut m = Boolean::default();
+    let mut r = ReusableResult::default();
+    if m.boolean(subject, clipping, Operation::Xor, &mut r)
+        .is_some()
+    {
+        Some(r.into_polygons())
+    } else {
+        None
+    }
+}
+
+#[cfg(not(feature = "test_reuse"))]
 pub fn intersection(subject: &[Polygon], clipping: &[Polygon]) -> Option<MultiPolygon> {
     boolean(subject, clipping, Operation::Intersection)
+}
+
+#[cfg(feature = "test_reuse")]
+pub fn intersection(subject: &[Polygon], clipping: &[Polygon]) -> Option<MultiPolygon> {
+    let mut m = Boolean::default();
+    let mut r = ReusableResult::default();
+    if m.boolean(subject, clipping, Operation::Intersection, &mut r)
+        .is_some()
+    {
+        Some(r.into_polygons())
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

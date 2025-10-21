@@ -7,8 +7,13 @@ use crate::{
     sweep_event::{ResultTransitionType, SweepEventArena, SweepEventId},
 };
 
-fn order_events(sorted_events: &[SweepEventId], arena: &mut SweepEventArena) -> Vec<SweepEventId> {
-    let mut result_events = vec![];
+fn order_events_reuse(
+    sorted_events: &[SweepEventId],
+    arena: &mut SweepEventArena,
+    result_events: &mut Vec<SweepEventId>,
+) {
+    result_events.clear();
+
     for &event in sorted_events {
         if (arena[event].left && arena[event].in_result())
             || (!arena[event].left
@@ -51,8 +56,6 @@ fn order_events(sorted_events: &[SweepEventId], arena: &mut SweepEventArena) -> 
             arena[other_event].other_pos = tmp;
         }
     }
-
-    result_events
 }
 
 fn next_pos(
@@ -137,14 +140,37 @@ fn initialize_contour_from_context(
     contour
 }
 
+#[cfg(not(feature = "test_reuse"))]
 pub(crate) fn connect_edges(
     sorted_events: &[SweepEventId],
     arena: &mut SweepEventArena,
 ) -> Vec<Contour> {
-    let result_events = order_events(sorted_events, arena);
-
-    let mut processed = HashSet::<i64>::new();
+    let mut result_events = vec![];
+    let mut processed = HashSet::new();
     let mut contours = vec![];
+
+    connect_edges_reuse(
+        sorted_events,
+        arena,
+        &mut result_events,
+        &mut processed,
+        &mut contours,
+    );
+
+    contours
+}
+
+pub(crate) fn connect_edges_reuse(
+    sorted_events: &[SweepEventId],
+    arena: &mut SweepEventArena,
+    result_events: &mut Vec<SweepEventId>, // reuse
+    processed: &mut HashSet<i64>,          // reuse
+    contours: &mut Vec<Contour>,           // reuse
+) {
+    order_events_reuse(sorted_events, arena, result_events);
+
+    processed.clear();
+    contours.clear();
 
     for i in 0..result_events.len() {
         if processed.contains(&(i as i64)) {
@@ -153,7 +179,7 @@ pub(crate) fn connect_edges(
 
         let contour_id = contours.len() as i64;
         let mut contour =
-            initialize_contour_from_context(result_events[i], &mut contours, contour_id, arena);
+            initialize_contour_from_context(result_events[i], contours, contour_id, arena);
 
         // Helper macro that combines marking an event as processed with assigning its output contour ID
         macro_rules! mark_as_processed {
@@ -181,7 +207,7 @@ pub(crate) fn connect_edges(
                 .points
                 .push(arena[result_events[pos as usize]].point);
 
-            pos = next_pos(pos, &result_events, &processed, orig_pos, arena);
+            pos = next_pos(pos, result_events, processed, orig_pos, arena);
 
             if pos == orig_pos || pos >= result_events.len() as i64 || pos < 0 {
                 break;
@@ -189,6 +215,4 @@ pub(crate) fn connect_edges(
         }
         contours.push(contour);
     }
-
-    contours
 }
