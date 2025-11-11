@@ -111,7 +111,7 @@ fn boolean(
 
     let sorted_events = subdivide(&mut event_queue, &sbbox, &cbbox, operation, &mut arena);
 
-    let contours = connect_edges(&sorted_events, &mut arena);
+    let contours = connect_edges(&sorted_events, &mut arena, (subject, clipping, operation));
 
     let mut polygons = vec![];
     for contour in contours.iter() {
