@@ -96,11 +96,6 @@ fn initialize_contour_from_context(
     contours: &mut [Contour],
     contour_id: i64,
     arena: &mut SweepEventArena,
-    params: (
-        &[Vec<Vec<[f64; 2]>>],
-        &[Vec<Vec<[f64; 2]>>],
-        crate::Operation,
-    ),
 ) -> Contour {
     let mut contour = Contour::default();
     if let Some(prev_in_result) = arena[event].prev_in_result {
@@ -131,11 +126,6 @@ fn initialize_contour_from_context(
         } else {
             // We are outside => this contour is an exterior contour of same depth.
             contour.hole_of = None;
-            if lower_contour_id < 0 || lower_contour_id as usize > contours.len() {
-                println!("{:?}", params.0);
-                println!("{:?}", params.1);
-                println!("{:?}", params.2);
-            }
             contour.depth = contours[lower_contour_id as usize].depth;
         }
     } else {
@@ -150,11 +140,6 @@ fn initialize_contour_from_context(
 pub(crate) fn connect_edges(
     sorted_events: &[SweepEventId],
     arena: &mut SweepEventArena,
-    params: (
-        &[Vec<Vec<[f64; 2]>>],
-        &[Vec<Vec<[f64; 2]>>],
-        crate::Operation,
-    ),
 ) -> Vec<Contour> {
     let result_events = order_events(sorted_events, arena);
 
@@ -167,13 +152,8 @@ pub(crate) fn connect_edges(
         }
 
         let contour_id = contours.len() as i64;
-        let mut contour = initialize_contour_from_context(
-            result_events[i],
-            &mut contours,
-            contour_id,
-            arena,
-            params,
-        );
+        let mut contour =
+            initialize_contour_from_context(result_events[i], &mut contours, contour_id, arena);
 
         // Helper macro that combines marking an event as processed with assigning its output contour ID
         macro_rules! mark_as_processed {
