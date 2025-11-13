@@ -75,56 +75,67 @@ fn compare_bboxes(
     }
 }
 
+fn try_boolean(
+    subject: &[Vec<Vec<[f64; 2]>>],
+    clipping: &[Vec<Vec<[f64; 2]>>],
+    operation: Operation,
+) -> Result<Option<Vec<Vec<Vec<[f64; 2]>>>>, &'static str> {
+    std::panic::catch_unwind(|| {
+        if let Some(trivial) = trivial_operation(subject, clipping, operation) {
+            return if trivial.is_empty() {
+                None
+            } else {
+                Some(trivial)
+            };
+        }
+
+        let mut sbbox = [f64::INFINITY, f64::INFINITY, -f64::INFINITY, -f64::INFINITY];
+        let mut cbbox = [f64::INFINITY, f64::INFINITY, -f64::INFINITY, -f64::INFINITY];
+
+        let mut arena = SweepEventArena::new();
+        let mut event_queue = fill_queue(
+            subject,
+            clipping,
+            &mut sbbox,
+            &mut cbbox,
+            Some(operation),
+            &mut arena,
+        );
+
+        if let Some(trivial) = compare_bboxes(subject, clipping, &sbbox, &cbbox, operation) {
+            return if trivial.is_empty() {
+                None
+            } else {
+                Some(trivial)
+            };
+        }
+
+        let sorted_events = subdivide(&mut event_queue, &sbbox, &cbbox, operation, &mut arena);
+
+        let contours = connect_edges(&sorted_events, &mut arena);
+
+        let mut polygons = vec![];
+        for contour in contours.iter() {
+            if contour.is_exterior() {
+                let mut rings = vec![contour.points.clone()];
+                for hole_id in contour.hole_ids.iter() {
+                    rings.push(contours[*hole_id as usize].points.clone());
+                }
+                polygons.push(rings);
+            }
+        }
+
+        Some(polygons)
+    })
+    .map_err(|_| "panicked")
+}
+
 fn boolean(
     subject: &[Vec<Vec<[f64; 2]>>],
     clipping: &[Vec<Vec<[f64; 2]>>],
     operation: Operation,
 ) -> Option<Vec<Vec<Vec<[f64; 2]>>>> {
-    if let Some(trivial) = trivial_operation(subject, clipping, operation) {
-        return if trivial.is_empty() {
-            None
-        } else {
-            Some(trivial)
-        };
-    }
-
-    let mut sbbox = [f64::INFINITY, f64::INFINITY, -f64::INFINITY, -f64::INFINITY];
-    let mut cbbox = [f64::INFINITY, f64::INFINITY, -f64::INFINITY, -f64::INFINITY];
-
-    let mut arena = SweepEventArena::new();
-    let mut event_queue = fill_queue(
-        subject,
-        clipping,
-        &mut sbbox,
-        &mut cbbox,
-        Some(operation),
-        &mut arena,
-    );
-
-    if let Some(trivial) = compare_bboxes(subject, clipping, &sbbox, &cbbox, operation) {
-        return if trivial.is_empty() {
-            None
-        } else {
-            Some(trivial)
-        };
-    }
-
-    let sorted_events = subdivide(&mut event_queue, &sbbox, &cbbox, operation, &mut arena);
-
-    let contours = connect_edges(&sorted_events, &mut arena);
-
-    let mut polygons = vec![];
-    for contour in contours.iter() {
-        if contour.is_exterior() {
-            let mut rings = vec![contour.points.clone()];
-            for hole_id in contour.hole_ids.iter() {
-                rings.push(contours[*hole_id as usize].points.clone());
-            }
-            polygons.push(rings);
-        }
-    }
-
-    Some(polygons)
+    try_boolean(subject, clipping, operation).unwrap_or_default()
 }
 
 pub type Point = [f64; 2];
@@ -150,6 +161,34 @@ pub fn xor(subject: &[Polygon], clipping: &[Polygon]) -> Option<MultiPolygon> {
 
 pub fn intersection(subject: &[Polygon], clipping: &[Polygon]) -> Option<MultiPolygon> {
     boolean(subject, clipping, Operation::Intersection)
+}
+
+pub fn try_union(
+    subject: &[Polygon],
+    clipping: &[Polygon],
+) -> Result<Option<MultiPolygon>, &'static str> {
+    try_boolean(subject, clipping, Operation::Union)
+}
+
+pub fn try_diff(
+    subject: &[Polygon],
+    clipping: &[Polygon],
+) -> Result<Option<MultiPolygon>, &'static str> {
+    try_boolean(subject, clipping, Operation::Difference)
+}
+
+pub fn try_xor(
+    subject: &[Polygon],
+    clipping: &[Polygon],
+) -> Result<Option<MultiPolygon>, &'static str> {
+    try_boolean(subject, clipping, Operation::Xor)
+}
+
+pub fn try_intersection(
+    subject: &[Polygon],
+    clipping: &[Polygon],
+) -> Result<Option<MultiPolygon>, &'static str> {
+    try_boolean(subject, clipping, Operation::Intersection)
 }
 
 #[cfg(test)]
