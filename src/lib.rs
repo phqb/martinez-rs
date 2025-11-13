@@ -75,11 +75,11 @@ fn compare_bboxes(
     }
 }
 
-fn boolean(
+fn try_boolean(
     subject: &[Vec<Vec<[f64; 2]>>],
     clipping: &[Vec<Vec<[f64; 2]>>],
     operation: Operation,
-) -> Option<Vec<Vec<Vec<[f64; 2]>>>> {
+) -> Result<Option<Vec<Vec<Vec<[f64; 2]>>>>, &'static str> {
     std::panic::catch_unwind(|| {
         if let Some(trivial) = trivial_operation(subject, clipping, operation) {
             return if trivial.is_empty() {
@@ -127,7 +127,15 @@ fn boolean(
 
         Some(polygons)
     })
-    .unwrap_or_default()
+    .map_err(|_| "panicked")
+}
+
+fn boolean(
+    subject: &[Vec<Vec<[f64; 2]>>],
+    clipping: &[Vec<Vec<[f64; 2]>>],
+    operation: Operation,
+) -> Option<Vec<Vec<Vec<[f64; 2]>>>> {
+    try_boolean(subject, clipping, operation).unwrap_or_default()
 }
 
 pub type Point = [f64; 2];
@@ -153,6 +161,34 @@ pub fn xor(subject: &[Polygon], clipping: &[Polygon]) -> Option<MultiPolygon> {
 
 pub fn intersection(subject: &[Polygon], clipping: &[Polygon]) -> Option<MultiPolygon> {
     boolean(subject, clipping, Operation::Intersection)
+}
+
+pub fn try_union(
+    subject: &[Polygon],
+    clipping: &[Polygon],
+) -> Result<Option<MultiPolygon>, &'static str> {
+    try_boolean(subject, clipping, Operation::Union)
+}
+
+pub fn try_diff(
+    subject: &[Polygon],
+    clipping: &[Polygon],
+) -> Result<Option<MultiPolygon>, &'static str> {
+    try_boolean(subject, clipping, Operation::Difference)
+}
+
+pub fn try_xor(
+    subject: &[Polygon],
+    clipping: &[Polygon],
+) -> Result<Option<MultiPolygon>, &'static str> {
+    try_boolean(subject, clipping, Operation::Xor)
+}
+
+pub fn try_intersection(
+    subject: &[Polygon],
+    clipping: &[Polygon],
+) -> Result<Option<MultiPolygon>, &'static str> {
+    try_boolean(subject, clipping, Operation::Intersection)
 }
 
 #[cfg(test)]
